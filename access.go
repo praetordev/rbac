@@ -196,6 +196,51 @@ func (a *AccessChecker) CanUse(ctx context.Context, userID int64, contentType Co
 	return a.HasObjectRole(ctx, userID, contentType, objectID, RoleFieldUse)
 }
 
+// OrgForContent returns the owning organization id of an org-scoped object and
+// whether it could be determined. For ContentTypeOrganization the object is the
+// org itself; resource types resolve via their organization_id column. The table
+// name comes from a fixed switch (never user input), so the interpolation is safe.
+func (a *AccessChecker) OrgForContent(ctx context.Context, contentType ContentType, objectID int64) (int64, bool) {
+	if contentType == ContentTypeOrganization {
+		return objectID, true
+	}
+	var table string
+	switch contentType {
+	case ContentTypeTeam:
+		table = "teams"
+	case ContentTypeProject:
+		table = "projects"
+	case ContentTypeInventory:
+		table = "inventories"
+	case ContentTypeJobTemplate:
+		table = "job_templates"
+	case ContentTypeWorkflowTemplate:
+		table = "workflow_templates"
+	case ContentTypeCredential:
+		table = "credentials"
+	default:
+		return 0, false
+	}
+	var org int64
+	if err := a.DB.GetContext(ctx, &org, "SELECT organization_id FROM "+table+" WHERE id = $1", objectID); err != nil {
+		return 0, false
+	}
+	return org, true
+}
+
+// UserIsOrgMember reports whether the user belongs to the organization (holds its
+// member_role directly or via the role hierarchy). Superusers always pass.
+func (a *AccessChecker) UserIsOrgMember(ctx context.Context, userID, orgID int64) (bool, error) {
+	role, err := a.GetObjectRole(ctx, ContentTypeOrganization, orgID, RoleFieldMember)
+	if err != nil {
+		if errors.Is(err, ErrRoleNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return a.UserInRole(ctx, userID, role.ID)
+}
+
 // FilterAccessibleIDs returns only the IDs the user can access with the given role
 func (a *AccessChecker) FilterAccessibleIDs(ctx context.Context, userID int64, contentType ContentType, roleField RoleField) ([]int64, error) {
 	info, err := a.GetUserInfo(ctx, userID)
