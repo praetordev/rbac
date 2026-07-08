@@ -16,6 +16,12 @@ const (
 	ContentTypeInventory    ContentType = "inventory"
 	ContentTypeJobTemplate  ContentType = "job_template"
 	ContentTypeCredential   ContentType = "credential"
+
+	// Deferred (see Gitea #60): workflow templates are not yet first-class RBAC
+	// objects — they have no per-object roles and are gated at the organization
+	// level (org workflow_admin_role manages them, org execute_role runs them,
+	// org approval_role approves their gates). Per-workflow admin/execute/read is
+	// a future milestone; there is deliberately no ContentTypeWorkflowTemplate.
 )
 
 // RoleField represents the type of role on an object
@@ -39,7 +45,11 @@ const (
 	// Resource roles
 	RoleFieldUse    RoleField = "use_role"
 	RoleFieldUpdate RoleField = "update_role"
-	RoleFieldAdhoc  RoleField = "adhoc_role"
+	// RoleFieldAdhoc is a reserved slot (see Gitea #60): the inventory adhoc_role
+	// is created by the trigger with the correct hierarchy (child of inventory
+	// admin, parent of read) but is not checked anywhere because there is no
+	// ad-hoc-command feature yet to gate. Wire it up when that feature lands.
+	RoleFieldAdhoc RoleField = "adhoc_role"
 )
 
 // SingletonRole represents system-wide roles

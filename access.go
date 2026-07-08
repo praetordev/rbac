@@ -153,69 +153,47 @@ func (a *AccessChecker) CanRead(ctx context.Context, userID int64, contentType C
 	return a.UserInRole(ctx, userID, role.ID)
 }
 
-// CanAdmin checks if user has admin access to an object
+// HasObjectRole reports whether the user holds roleField on (contentType,
+// objectID), directly or through the role hierarchy. Superusers always pass.
+//
+// Because parents inherit their children via role_ancestors, checking a
+// fine-grained role also admits everyone above it: the object admin, the org's
+// delegated sub-admin, the org admin, and the system administrator. That is why
+// callers only ever check the *most specific* role an action needs — there is
+// no need for "admin OR sub-admin" style disjunctions.
+func (a *AccessChecker) HasObjectRole(ctx context.Context, userID int64, contentType ContentType, objectID int64, roleField RoleField) (bool, error) {
+	info, err := a.GetUserInfo(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	if info.IsSuperuser {
+		return true, nil
+	}
+
+	role, err := a.GetObjectRole(ctx, contentType, objectID, roleField)
+	if err != nil {
+		if errors.Is(err, ErrRoleNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return a.UserInRole(ctx, userID, role.ID)
+}
+
+// CanAdmin checks if user has admin access to an object.
 func (a *AccessChecker) CanAdmin(ctx context.Context, userID int64, contentType ContentType, objectID int64) (bool, error) {
-	// Check superuser first
-	info, err := a.GetUserInfo(ctx, userID)
-	if err != nil {
-		return false, err
-	}
-	if info.IsSuperuser {
-		return true, nil
-	}
-
-	// Get the admin_role for this object
-	role, err := a.GetObjectRole(ctx, contentType, objectID, RoleFieldAdmin)
-	if err != nil {
-		if errors.Is(err, ErrRoleNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-
-	return a.UserInRole(ctx, userID, role.ID)
+	return a.HasObjectRole(ctx, userID, contentType, objectID, RoleFieldAdmin)
 }
 
-// CanExecute checks if user has execute access to an object (job template, organization)
+// CanExecute checks if user has execute access to an object (job template, organization).
 func (a *AccessChecker) CanExecute(ctx context.Context, userID int64, contentType ContentType, objectID int64) (bool, error) {
-	info, err := a.GetUserInfo(ctx, userID)
-	if err != nil {
-		return false, err
-	}
-	if info.IsSuperuser {
-		return true, nil
-	}
-
-	role, err := a.GetObjectRole(ctx, contentType, objectID, RoleFieldExecute)
-	if err != nil {
-		if errors.Is(err, ErrRoleNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-
-	return a.UserInRole(ctx, userID, role.ID)
+	return a.HasObjectRole(ctx, userID, contentType, objectID, RoleFieldExecute)
 }
 
-// CanUse checks if user can use a resource (project, inventory, credential)
+// CanUse checks if user can use a resource (project, inventory, credential).
 func (a *AccessChecker) CanUse(ctx context.Context, userID int64, contentType ContentType, objectID int64) (bool, error) {
-	info, err := a.GetUserInfo(ctx, userID)
-	if err != nil {
-		return false, err
-	}
-	if info.IsSuperuser {
-		return true, nil
-	}
-
-	role, err := a.GetObjectRole(ctx, contentType, objectID, RoleFieldUse)
-	if err != nil {
-		if errors.Is(err, ErrRoleNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-
-	return a.UserInRole(ctx, userID, role.ID)
+	return a.HasObjectRole(ctx, userID, contentType, objectID, RoleFieldUse)
 }
 
 // FilterAccessibleIDs returns only the IDs the user can access with the given role
