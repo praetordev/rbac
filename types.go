@@ -16,12 +16,10 @@ const (
 	ContentTypeInventory    ContentType = "inventory"
 	ContentTypeJobTemplate  ContentType = "job_template"
 	ContentTypeCredential   ContentType = "credential"
-
-	// Deferred (see Gitea #60): workflow templates are not yet first-class RBAC
-	// objects — they have no per-object roles and are gated at the organization
-	// level (org workflow_admin_role manages them, org execute_role runs them,
-	// org approval_role approves their gates). Per-workflow admin/execute/read is
-	// a future milestone; there is deliberately no ContentTypeWorkflowTemplate.
+	// Workflow templates are first-class RBAC objects (Gitea #60): per-workflow
+	// admin/execute/approval/read roles, parented to the org's workflow_admin/
+	// execute/approval/auditor roles (see migration 000049).
+	ContentTypeWorkflowTemplate ContentType = "workflow_template"
 )
 
 // RoleField represents the type of role on an object
