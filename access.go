@@ -218,6 +218,8 @@ func (a *AccessChecker) FilterAccessibleIDs(ctx context.Context, userID int64, c
 			query = "SELECT id FROM inventories"
 		case ContentTypeJobTemplate:
 			query = "SELECT id FROM job_templates"
+		case ContentTypeWorkflowTemplate:
+			query = "SELECT id FROM workflow_templates"
 		case ContentTypeCredential:
 			query = "SELECT id FROM credentials"
 		default:
@@ -242,6 +244,8 @@ func (a *AccessChecker) FilterAccessibleIDs(ctx context.Context, userID int64, c
 			query = "SELECT id FROM inventories"
 		case ContentTypeJobTemplate:
 			query = "SELECT id FROM job_templates"
+		case ContentTypeWorkflowTemplate:
+			query = "SELECT id FROM workflow_templates"
 		case ContentTypeCredential:
 			query = "SELECT id FROM credentials"
 		default:
