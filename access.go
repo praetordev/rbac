@@ -196,29 +196,43 @@ func (a *AccessChecker) CanUse(ctx context.Context, userID int64, contentType Co
 	return a.HasObjectRole(ctx, userID, contentType, objectID, RoleFieldUse)
 }
 
+// contentTables is the single source of truth mapping an RBAC content type to
+// its backing table. Adding a new RBAC-scoped resource is one entry here (plus its
+// per-object role trigger — copy db/migrations/TEMPLATE_rbac_resource.sql). Table
+// names are compile-time constants (never user input), so interpolating them into
+// queries below is safe. It replaced three parallel switch statements (B8/#87).
+var contentTables = map[ContentType]string{
+	ContentTypeOrganization:     "organizations",
+	ContentTypeTeam:             "teams",
+	ContentTypeProject:          "projects",
+	ContentTypeInventory:        "inventories",
+	ContentTypeJobTemplate:      "job_templates",
+	ContentTypeWorkflowTemplate: "workflow_templates",
+	ContentTypeCredential:       "credentials",
+}
+
+// allIDsOfType returns every object id of a content type — used for the superuser
+// and system-auditor "see everything" paths.
+func (a *AccessChecker) allIDsOfType(ctx context.Context, contentType ContentType) ([]int64, error) {
+	table, ok := contentTables[contentType]
+	if !ok {
+		return nil, nil
+	}
+	var ids []int64
+	err := a.DB.SelectContext(ctx, &ids, "SELECT id FROM "+table)
+	return ids, err
+}
+
 // OrgForContent returns the owning organization id of an org-scoped object and
 // whether it could be determined. For ContentTypeOrganization the object is the
-// org itself; resource types resolve via their organization_id column. The table
-// name comes from a fixed switch (never user input), so the interpolation is safe.
+// org itself; resource types resolve via their organization_id column (table from
+// contentTables, never user input, so the interpolation is safe).
 func (a *AccessChecker) OrgForContent(ctx context.Context, contentType ContentType, objectID int64) (int64, bool) {
 	if contentType == ContentTypeOrganization {
 		return objectID, true
 	}
-	var table string
-	switch contentType {
-	case ContentTypeTeam:
-		table = "teams"
-	case ContentTypeProject:
-		table = "projects"
-	case ContentTypeInventory:
-		table = "inventories"
-	case ContentTypeJobTemplate:
-		table = "job_templates"
-	case ContentTypeWorkflowTemplate:
-		table = "workflow_templates"
-	case ContentTypeCredential:
-		table = "credentials"
-	default:
+	table, ok := contentTables[contentType]
+	if !ok {
 		return 0, false
 	}
 	var org int64
@@ -248,56 +262,14 @@ func (a *AccessChecker) FilterAccessibleIDs(ctx context.Context, userID int64, c
 		return nil, err
 	}
 
-	// Superuser can access everything
+	// Superuser can access everything.
 	if info.IsSuperuser {
-		var ids []int64
-		query := ""
-		switch contentType {
-		case ContentTypeOrganization:
-			query = "SELECT id FROM organizations"
-		case ContentTypeTeam:
-			query = "SELECT id FROM teams"
-		case ContentTypeProject:
-			query = "SELECT id FROM projects"
-		case ContentTypeInventory:
-			query = "SELECT id FROM inventories"
-		case ContentTypeJobTemplate:
-			query = "SELECT id FROM job_templates"
-		case ContentTypeWorkflowTemplate:
-			query = "SELECT id FROM workflow_templates"
-		case ContentTypeCredential:
-			query = "SELECT id FROM credentials"
-		default:
-			return nil, nil
-		}
-		err := a.DB.SelectContext(ctx, &ids, query)
-		return ids, err
+		return a.allIDsOfType(ctx, contentType)
 	}
 
-	// System auditor can read everything
+	// System auditor can read everything.
 	if info.IsSystemAuditor && roleField == RoleFieldRead {
-		var ids []int64
-		query := ""
-		switch contentType {
-		case ContentTypeOrganization:
-			query = "SELECT id FROM organizations"
-		case ContentTypeTeam:
-			query = "SELECT id FROM teams"
-		case ContentTypeProject:
-			query = "SELECT id FROM projects"
-		case ContentTypeInventory:
-			query = "SELECT id FROM inventories"
-		case ContentTypeJobTemplate:
-			query = "SELECT id FROM job_templates"
-		case ContentTypeWorkflowTemplate:
-			query = "SELECT id FROM workflow_templates"
-		case ContentTypeCredential:
-			query = "SELECT id FROM credentials"
-		default:
-			return nil, nil
-		}
-		err := a.DB.SelectContext(ctx, &ids, query)
-		return ids, err
+		return a.allIDsOfType(ctx, contentType)
 	}
 
 	// For regular users, find objects where they have the role
