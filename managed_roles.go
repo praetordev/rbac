@@ -42,6 +42,27 @@ type ManagedRole struct {
 	Codenames []string
 }
 
+// ManagedNameForLegacy returns the managed RoleDefinition name that mirrors a legacy
+// object/org role_field, for backfilling legacy grants into the capability model.
+func ManagedNameForLegacy(ct ContentType, rf RoleField) (string, bool) {
+	for _, mr := range ManagedRoles() {
+		if mr.Singleton == "" && mr.ContentType == ct && mr.RoleField == rf {
+			return mr.Name, true
+		}
+	}
+	return "", false
+}
+
+// ManagedNameForSingleton returns the managed RoleDefinition name for a system singleton.
+func ManagedNameForSingleton(s SingletonRole) (string, bool) {
+	for _, mr := range ManagedRoles() {
+		if mr.Singleton == s {
+			return mr.Name, true
+		}
+	}
+	return "", false
+}
+
 // caps builds codenames for a content type from an explicit action list.
 func caps(ct ContentType, actions ...Action) []string {
 	out := make([]string, 0, len(actions))
