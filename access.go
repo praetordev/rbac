@@ -341,41 +341,64 @@ func (a *AccessChecker) GetRoleTeams(ctx context.Context, roleID int64) ([]TeamR
 	return teams, err
 }
 
-// AddUserToRole adds a user to a role
+// AddUserToRole adds a user to a role (and dual-writes the capability mirror, #97/#99).
 func (a *AccessChecker) AddUserToRole(ctx context.Context, roleID int64, userID int64) error {
-	_, err := a.DB.ExecContext(ctx, `
+	if _, err := a.DB.ExecContext(ctx, `
 		INSERT INTO role_members (role_id, user_id)
 		VALUES ($1, $2)
 		ON CONFLICT (role_id, user_id) DO NOTHING
-	`, roleID, userID)
-	return err
+	`, roleID, userID); err != nil {
+		return err
+	}
+	return a.mirrorLegacyGrant(ctx, roleID, userID, true, true)
 }
 
-// RemoveUserFromRole removes a user from a role
+// RemoveUserFromRole removes a user from a role (and its capability mirror).
 func (a *AccessChecker) RemoveUserFromRole(ctx context.Context, roleID int64, userID int64) error {
-	_, err := a.DB.ExecContext(ctx, `
+	if _, err := a.DB.ExecContext(ctx, `
 		DELETE FROM role_members
 		WHERE role_id = $1 AND user_id = $2
-	`, roleID, userID)
-	return err
+	`, roleID, userID); err != nil {
+		return err
+	}
+	return a.mirrorLegacyGrant(ctx, roleID, userID, true, false)
 }
 
-// AddTeamToRole adds a team to a role
+// AddTeamToRole adds a team to a role (and dual-writes the capability mirror).
 func (a *AccessChecker) AddTeamToRole(ctx context.Context, roleID int64, teamID int64) error {
-	_, err := a.DB.ExecContext(ctx, `
+	if _, err := a.DB.ExecContext(ctx, `
 		INSERT INTO team_roles (role_id, team_id)
 		VALUES ($1, $2)
 		ON CONFLICT (role_id, team_id) DO NOTHING
-	`, roleID, teamID)
-	return err
+	`, roleID, teamID); err != nil {
+		return err
+	}
+	return a.mirrorLegacyGrant(ctx, roleID, teamID, false, true)
 }
 
-// RemoveTeamFromRole removes a team from a role
+// RemoveTeamFromRole removes a team from a role (and its capability mirror).
 func (a *AccessChecker) RemoveTeamFromRole(ctx context.Context, roleID int64, teamID int64) error {
-	_, err := a.DB.ExecContext(ctx, `
+	if _, err := a.DB.ExecContext(ctx, `
 		DELETE FROM team_roles
 		WHERE role_id = $1 AND team_id = $2
-	`, roleID, teamID)
+	`, roleID, teamID); err != nil {
+		return err
+	}
+	return a.mirrorLegacyGrant(ctx, roleID, teamID, false, false)
+}
+
+// mirrorLegacyGrant dual-writes (grant) or removes (revoke) the capability assignment that
+// mirrors a legacy role membership, so capability enforcement reflects runtime grants.
+func (a *AccessChecker) mirrorLegacyGrant(ctx context.Context, roleID, actorID int64, isUser, grant bool) error {
+	ct, objID, roleField, ok, err := legacyRoleFields(ctx, a.DB, roleID)
+	if err != nil || !ok {
+		return err
+	}
+	if grant {
+		_, err = GrantCapabilityForLegacyFields(ctx, a.DB, ct, objID, roleField, actorID, isUser)
+	} else {
+		_, err = RevokeCapabilityForLegacyFields(ctx, a.DB, ct, objID, roleField, actorID, isUser)
+	}
 	return err
 }
 
