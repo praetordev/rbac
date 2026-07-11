@@ -155,7 +155,11 @@ func ManagedRoles() []ManagedRole {
 		{
 			Name: "Organization Execute", Description: "Run any executable resource in the organization.",
 			ContentType: org, RoleField: RoleFieldExecute,
-			Codenames: caps(ContentTypeJobTemplate, ActionExecute, ActionView),
+			// Org execute runs both job templates and workflows (000048 + 000049).
+			Codenames: concat(
+				caps(ContentTypeJobTemplate, ActionExecute, ActionView),
+				caps(ContentTypeWorkflowTemplate, ActionExecute, ActionView),
+			),
 		},
 		{
 			Name: "Organization Project Admin", Description: "Manage all projects in the organization.",

@@ -105,21 +105,3 @@ func RevokeCapabilityForLegacyFields(ctx context.Context, ext sqlx.ExtContext, c
 	}
 	return true, err
 }
-
-// legacyRoleFields resolves a legacy role id to its (content_type, object_id, role_field).
-// ok is false for a singleton role (NULL scope), which is mirrored via the user flags, not
-// an object assignment.
-func legacyRoleFields(ctx context.Context, ext sqlx.ExtContext, roleID int64) (ct string, objID int64, roleField string, ok bool, err error) {
-	var row struct {
-		ContentType *string `db:"content_type"`
-		ObjectID    *int64  `db:"object_id"`
-		RoleField   string  `db:"role_field"`
-	}
-	if err = sqlx.GetContext(ctx, ext, &row, `SELECT content_type, object_id, role_field FROM roles WHERE id = $1`, roleID); err != nil {
-		return "", 0, "", false, err
-	}
-	if row.ContentType == nil || row.ObjectID == nil {
-		return "", 0, "", false, nil
-	}
-	return *row.ContentType, *row.ObjectID, row.RoleField, true, nil
-}
