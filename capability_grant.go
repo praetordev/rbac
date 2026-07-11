@@ -77,6 +77,51 @@ func GrantCapabilityForLegacyFields(ctx context.Context, ext sqlx.ExtContext, ct
 	return true, err
 }
 
+// EnsureGlobalRole assigns a user the global (system-wide) RoleDefinition named defName
+// (System Administrator / System Auditor), creating the NULL-scoped object_role if absent.
+// Global roles are evaluated at query time from the definition's permissions, so no cache
+// rebuild is needed.
+func EnsureGlobalRole(ctx context.Context, ext sqlx.ExtContext, defName string, userID int64) error {
+	defID, ok, err := defIDByName(ctx, ext, defName)
+	if err != nil || !ok {
+		return err
+	}
+	var orID int64
+	err = sqlx.GetContext(ctx, ext, &orID,
+		`SELECT id FROM object_roles WHERE role_definition_id = $1 AND content_type IS NULL`, defID)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = sqlx.GetContext(ctx, ext, &orID,
+			`INSERT INTO object_roles (role_definition_id, content_type, object_id) VALUES ($1, NULL, NULL) RETURNING id`, defID)
+	}
+	if err != nil {
+		return err
+	}
+	_, err = ext.ExecContext(ctx,
+		`INSERT INTO role_user_assignments (role_definition_id, user_id, object_role_id)
+		 VALUES ($1, $2, $3) ON CONFLICT (user_id, object_role_id) DO NOTHING`, defID, userID, orID)
+	return err
+}
+
+// RemoveGlobalRole removes a user's global RoleDefinition assignment.
+func RemoveGlobalRole(ctx context.Context, ext sqlx.ExtContext, defName string, userID int64) error {
+	defID, ok, err := defIDByName(ctx, ext, defName)
+	if err != nil || !ok {
+		return err
+	}
+	var orID int64
+	err = sqlx.GetContext(ctx, ext, &orID,
+		`SELECT id FROM object_roles WHERE role_definition_id = $1 AND content_type IS NULL`, defID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, err = ext.ExecContext(ctx,
+		`DELETE FROM role_user_assignments WHERE object_role_id = $1 AND user_id = $2`, orID, userID)
+	return err
+}
+
 // RevokeCapabilityForLegacyFields removes the mirror assignment. The object_role and its
 // evaluation rows are left in place (shared with other actors).
 func RevokeCapabilityForLegacyFields(ctx context.Context, ext sqlx.ExtContext, ct string, objID int64, roleField string, actorID int64, isUser bool) (bool, error) {
