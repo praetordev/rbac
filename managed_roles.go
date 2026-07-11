@@ -156,7 +156,7 @@ func ManagedRoles() []ManagedRole {
 			Name: "Organization Workflow Admin", Description: "Manage all workflow templates in the organization.",
 			ContentType: org, RoleField: RoleFieldWorkflowAdmin,
 			// No approve: managing a workflow != approving its gates (000049).
-			Codenames: caps(ContentTypeWorkflowTemplate, ActionAdd, ActionView, ActionChange, ActionDelete, ActionExecute),
+			Codenames: caps(ContentTypeWorkflowTemplate, ActionAdd, ActionView, ActionChange, ActionDelete, ActionManage, ActionExecute),
 		},
 		{
 			Name: "Organization Approval", Description: "Approve or deny workflow approval nodes in the organization.",
@@ -168,7 +168,7 @@ func ManagedRoles() []ManagedRole {
 		{
 			Name: "Project Admin", Description: "Manage all aspects of the project.",
 			ContentType: ContentTypeProject, RoleField: RoleFieldAdmin,
-			Codenames: caps(ContentTypeProject, ActionView, ActionChange, ActionDelete, ActionUse, ActionUpdate),
+			Codenames: caps(ContentTypeProject, ActionView, ActionChange, ActionDelete, ActionManage, ActionUse, ActionUpdate),
 		},
 		{
 			Name: "Project Use", Description: "Use the project in a job template.",
@@ -190,7 +190,7 @@ func ManagedRoles() []ManagedRole {
 		{
 			Name: "Inventory Admin", Description: "Manage all aspects of the inventory.",
 			ContentType: ContentTypeInventory, RoleField: RoleFieldAdmin,
-			Codenames: caps(ContentTypeInventory, ActionView, ActionChange, ActionDelete, ActionUse, ActionUpdate, ActionAdhoc),
+			Codenames: caps(ContentTypeInventory, ActionView, ActionChange, ActionDelete, ActionManage, ActionUse, ActionUpdate, ActionAdhoc),
 		},
 		{
 			Name: "Inventory Use", Description: "Use the inventory in a job template.",
@@ -217,7 +217,7 @@ func ManagedRoles() []ManagedRole {
 		{
 			Name: "Credential Admin", Description: "Manage all aspects of the credential.",
 			ContentType: ContentTypeCredential, RoleField: RoleFieldAdmin,
-			Codenames: caps(ContentTypeCredential, ActionView, ActionChange, ActionDelete, ActionUse),
+			Codenames: caps(ContentTypeCredential, ActionView, ActionChange, ActionDelete, ActionManage, ActionUse),
 		},
 		{
 			Name: "Credential Use", Description: "Use the credential in a job template.",
@@ -234,7 +234,7 @@ func ManagedRoles() []ManagedRole {
 		{
 			Name: "Job Template Admin", Description: "Manage all aspects of the job template.",
 			ContentType: ContentTypeJobTemplate, RoleField: RoleFieldAdmin,
-			Codenames: caps(ContentTypeJobTemplate, ActionView, ActionChange, ActionDelete, ActionExecute),
+			Codenames: caps(ContentTypeJobTemplate, ActionView, ActionChange, ActionDelete, ActionManage, ActionExecute),
 		},
 		{
 			Name: "Job Template Execute", Description: "Execute the job template.",
@@ -251,7 +251,7 @@ func ManagedRoles() []ManagedRole {
 		{
 			Name: "Workflow Template Admin", Description: "Manage all aspects of the workflow template.",
 			ContentType: ContentTypeWorkflowTemplate, RoleField: RoleFieldAdmin,
-			Codenames: caps(ContentTypeWorkflowTemplate, ActionView, ActionChange, ActionDelete, ActionExecute),
+			Codenames: caps(ContentTypeWorkflowTemplate, ActionView, ActionChange, ActionDelete, ActionManage, ActionExecute),
 		},
 		{
 			Name: "Workflow Template Execute", Description: "Launch the workflow template.",
@@ -273,7 +273,7 @@ func ManagedRoles() []ManagedRole {
 		{
 			Name: "Team Admin", Description: "Manage all aspects of the team.",
 			ContentType: ContentTypeTeam, RoleField: RoleFieldAdmin,
-			Codenames: caps(ContentTypeTeam, ActionView, ActionChange, ActionDelete),
+			Codenames: caps(ContentTypeTeam, ActionView, ActionChange, ActionDelete, ActionManage),
 		},
 		{
 			Name: "Team Member", Description: "Belong to the team.",

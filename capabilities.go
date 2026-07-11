@@ -28,6 +28,7 @@ const (
 	ActionAdd     Action = "add"     // create objects of this type (held at org scope)
 	ActionChange  Action = "change"  // modify the object's configuration
 	ActionDelete  Action = "delete"  // delete the object
+	ActionManage  Action = "manage"  // administer the object (the actAdmin check maps here)
 	ActionUse     Action = "use"     // reference in a job template (project/inventory/credential)
 	ActionExecute Action = "execute" // launch (job template / workflow template)
 	ActionUpdate  Action = "update"  // SCM update / inventory-source sync
@@ -52,13 +53,13 @@ var capabilityContentTypeOrder = []ContentType{
 // IsValidCapability. Actions within a type are listed CRUD-first, then specials, to
 // keep seeded rows in a readable order.
 var capabilityCatalog = map[ContentType][]Action{
-	ContentTypeOrganization:     {ActionView, ActionAdd, ActionChange, ActionDelete},
-	ContentTypeTeam:             {ActionView, ActionAdd, ActionChange, ActionDelete},
-	ContentTypeProject:          {ActionView, ActionAdd, ActionChange, ActionDelete, ActionUse, ActionUpdate},
-	ContentTypeInventory:        {ActionView, ActionAdd, ActionChange, ActionDelete, ActionUse, ActionUpdate, ActionAdhoc},
-	ContentTypeCredential:       {ActionView, ActionAdd, ActionChange, ActionDelete, ActionUse},
-	ContentTypeJobTemplate:      {ActionView, ActionAdd, ActionChange, ActionDelete, ActionExecute},
-	ContentTypeWorkflowTemplate: {ActionView, ActionAdd, ActionChange, ActionDelete, ActionExecute, ActionApprove},
+	ContentTypeOrganization:     {ActionView, ActionAdd, ActionChange, ActionDelete, ActionManage},
+	ContentTypeTeam:             {ActionView, ActionAdd, ActionChange, ActionDelete, ActionManage},
+	ContentTypeProject:          {ActionView, ActionAdd, ActionChange, ActionDelete, ActionManage, ActionUse, ActionUpdate},
+	ContentTypeInventory:        {ActionView, ActionAdd, ActionChange, ActionDelete, ActionManage, ActionUse, ActionUpdate, ActionAdhoc},
+	ContentTypeCredential:       {ActionView, ActionAdd, ActionChange, ActionDelete, ActionManage, ActionUse},
+	ContentTypeJobTemplate:      {ActionView, ActionAdd, ActionChange, ActionDelete, ActionManage, ActionExecute},
+	ContentTypeWorkflowTemplate: {ActionView, ActionAdd, ActionChange, ActionDelete, ActionManage, ActionExecute, ActionApprove},
 }
 
 // DABPermission is one atomic capability (a row of dab_permissions).

@@ -121,6 +121,32 @@ func TestObjectAdminsExcludeAdd(t *testing.T) {
 	}
 }
 
+// The manage capability (what actAdmin maps to in #97) must be present on every
+// object-level Admin role, or an admin would fail the admin check under the new model.
+func TestObjectAdminsIncludeManage(t *testing.T) {
+	cases := map[string]ContentType{
+		"Project Admin":           ContentTypeProject,
+		"Inventory Admin":         ContentTypeInventory,
+		"Credential Admin":        ContentTypeCredential,
+		"Job Template Admin":      ContentTypeJobTemplate,
+		"Workflow Template Admin": ContentTypeWorkflowTemplate,
+		"Team Admin":              ContentTypeTeam,
+	}
+	for name, ct := range cases {
+		if !has(find(t, name), Codename(ct, ActionManage)) {
+			t.Errorf("%s must include %q", name, Codename(ct, ActionManage))
+		}
+	}
+	// System / Organization admin carry the full catalog, so every manage_* too.
+	for _, name := range []string{"System Administrator", "Organization Admin"} {
+		for _, ct := range CapabilityContentTypes() {
+			if !has(find(t, name), Codename(ct, ActionManage)) {
+				t.Errorf("%s missing %q", name, Codename(ct, ActionManage))
+			}
+		}
+	}
+}
+
 // Every legacy object role_field that enforcement checks has a managed mirror, so no
 // current grant loses meaning under the capability model.
 func TestLegacyObjectRolesCovered(t *testing.T) {
