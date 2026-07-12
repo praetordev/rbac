@@ -10,6 +10,9 @@ func catalogSet() map[string]bool {
 	for _, p := range PermissionCatalog() {
 		set[p.Codename] = true
 	}
+	for _, p := range SystemPermissionCatalog() {
+		set[p.Codename] = true
+	}
 	return set
 }
 
@@ -78,12 +81,17 @@ func has(mr ManagedRole, codename string) bool {
 
 // System / Organization admin grant the full catalog; auditors are view-only.
 func TestAdminAndAuditorShape(t *testing.T) {
-	full := len(PermissionCatalog())
-	for _, name := range []string{"System Administrator", "Organization Admin"} {
-		if got := len(find(t, name).Codenames); got != full {
-			t.Errorf("%s should grant all %d capabilities, has %d", name, full, got)
-		}
+	catalog := len(PermissionCatalog())
+	system := len(SystemPermissionCatalog())
+	// Organization Admin grants the full content-type catalog; System Administrator
+	// additionally holds every system capability.
+	if got := len(find(t, "Organization Admin").Codenames); got != catalog {
+		t.Errorf("Organization Admin should grant all %d capabilities, has %d", catalog, got)
 	}
+	if got := len(find(t, "System Administrator").Codenames); got != catalog+system {
+		t.Errorf("System Administrator should grant all %d capabilities, has %d", catalog+system, got)
+	}
+	// System Auditor is read-only view_* (including view_activitystream).
 	for _, name := range []string{"System Auditor", "Organization Auditor"} {
 		for _, cn := range find(t, name).Codenames {
 			if !strings.HasPrefix(cn, string(ActionView)+"_") {

@@ -117,11 +117,13 @@ func ManagedRoles() []ManagedRole {
 		// ── System singletons ──────────────────────────────────────────────
 		{
 			Name: "System Administrator", Description: "Full access to everything.",
-			Singleton: SingletonSystemAdministrator, Codenames: everyCodename(),
+			Singleton: SingletonSystemAdministrator,
+			Codenames: concat(everyCodename(), systemAdminCodenames()),
 		},
 		{
 			Name: "System Auditor", Description: "Read-only access to everything.",
-			Singleton: SingletonSystemAuditor, Codenames: everyViewCodename(),
+			Singleton: SingletonSystemAuditor,
+			Codenames: concat(everyViewCodename(), systemAuditorCodenames()),
 		},
 
 		// ── Organization roles (assigned to the org; codenames span children) ─
