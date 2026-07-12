@@ -1,0 +1,107 @@
+name: Release
+
+# Cut a new SemVer tag + GitHub Release when a PR merges into main. The bump
+# level is derived from the merged branch's prefix:
+#
+#   debug/*     -> patch    (x.y.Z+1)   bug fixes, no API change
+#   feature/*   -> minor    (x.Y+1.0)   backward-compatible additions
+#   breaking/*  -> major    (X+1.0.0)   backward-incompatible API changes
+#
+# Any other branch prefix merges normally but cuts no release. Go module tags
+# are consumed straight from the repo via the module proxy, so "publish" here is
+# simply creating the tag.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+# Serialize releases so two quick merges can't race on tag creation.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0 # all history + tags, for version math
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go build ./...
+          go test ./...
+
+      - name: Compute next version
+        id: ver
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+
+          case "$HEAD_REF" in
+            debug/*)    bump=patch ;;
+            feature/*)  bump=minor ;;
+            breaking/*) bump=major ;;
+            *)
+              echo "Branch '$HEAD_REF' is not a release branch (debug/*, feature/*, breaking/*) — no release cut."
+              echo "release=false" >> "$GITHUB_OUTPUT"
+              exit 0 ;;
+          esac
+
+          latest=$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n1)
+          latest=${latest:-v0.0.0}
+          core=${latest#v}
+          IFS=. read -r major minor patch <<< "$core"
+
+          case "$bump" in
+            patch) patch=$((patch + 1)) ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+          esac
+
+          # Go modules v2+ require the module path to carry a /vN suffix
+          # (go.mod + every importer). That can't be safely automated here.
+          if [ "$major" -ge 2 ]; then
+            echo "::error::Bump would produce v${major}.${minor}.${patch}, but Go requires the module path to become github.com/praetordev/rbac/v${major} for v2+. Do that migration in a PR and tag manually."
+            exit 1
+          fi
+
+          next="v${major}.${minor}.${patch}"
+          echo "Releasing ${next} (${bump}) — previous ${latest}"
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          echo "next=${next}" >> "$GITHUB_OUTPUT"
+          echo "bump=${bump}" >> "$GITHUB_OUTPUT"
+
+      - name: Tag & GitHub Release
+        if: steps.ver.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXT: ${{ steps.ver.outputs.next }}
+          BUMP: ${{ steps.ver.outputs.bump }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$NEXT" -m "$NEXT ($BUMP) — #$PR_NUM: $PR_TITLE"
+          git push origin "$NEXT"
+          gh release create "$NEXT" \
+            --target main \
+            --title "$NEXT" \
+            --notes "**${BUMP}** release from #${PR_NUM}: ${PR_TITLE}"
