@@ -1,12 +1,9 @@
-// Package rbac provides AWX-style Role-Based Access Control for Praetor.
-// It implements role hierarchy, implicit roles, and permission checking.
+// Package rbac provides Praetor's capability-based Role-Based Access Control:
+// the capability catalog, managed role definitions, and the Authorizer contract
+// (policy-decision-point interface) the services enforce against.
 package rbac
 
-import (
-	"time"
-)
-
-// ContentType represents the type of object a role belongs to (polymorphic)
+// ContentType represents the type of object a capability applies to (polymorphic).
 type ContentType string
 
 const (
@@ -22,7 +19,12 @@ const (
 	ContentTypeWorkflowTemplate ContentType = "workflow_template"
 )
 
-// RoleField represents the type of role on an object
+// RoleField is the legacy per-object role-slot name. It survives as the
+// compatibility vocabulary the api still speaks for org membership, create-in-org
+// gating, and creator-grants — each resolved to a managed RoleDefinition via
+// ManagedNameForLegacy. The AWX role-hierarchy tables it originally keyed were
+// dropped in migration 000057; retiring RoleField itself is the remaining step of
+// the capability migration.
 type RoleField string
 
 const (
@@ -50,74 +52,10 @@ const (
 	RoleFieldAdhoc RoleField = "adhoc_role"
 )
 
-// SingletonRole represents system-wide roles
+// SingletonRole represents system-wide roles.
 type SingletonRole string
 
 const (
 	SingletonSystemAdministrator SingletonRole = "system_administrator"
 	SingletonSystemAuditor       SingletonRole = "system_auditor"
-)
-
-// Role represents an AWX-style role with hierarchy support
-type Role struct {
-	ID            int64     `db:"id" json:"id"`
-	RoleField     string    `db:"role_field" json:"role_field"`
-	SingletonName *string   `db:"singleton_name" json:"singleton_name,omitempty"`
-	ContentType   *string   `db:"content_type" json:"content_type,omitempty"`
-	ObjectID      *int64    `db:"object_id" json:"object_id,omitempty"`
-	Name          *string   `db:"name" json:"name,omitempty"`
-	Description   *string   `db:"description" json:"description,omitempty"`
-	CreatedAt     time.Time `db:"created_at" json:"created_at"`
-	ModifiedAt    time.Time `db:"modified_at" json:"modified_at"`
-}
-
-// RoleParent represents a parent-child relationship between roles
-type RoleParent struct {
-	ID           int64     `db:"id" json:"id"`
-	RoleID       int64     `db:"role_id" json:"role_id"`
-	ParentRoleID int64     `db:"parent_role_id" json:"parent_role_id"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-}
-
-// RoleAncestor represents a computed ancestor relationship for efficient lookups
-type RoleAncestor struct {
-	ID             int64 `db:"id" json:"id"`
-	RoleID         int64 `db:"role_id" json:"role_id"`
-	AncestorRoleID int64 `db:"ancestor_role_id" json:"ancestor_role_id"`
-}
-
-// RoleMember represents a user's direct membership in a role
-type RoleMember struct {
-	ID        int64     `db:"id" json:"id"`
-	RoleID    int64     `db:"role_id" json:"role_id"`
-	UserID    int64     `db:"user_id" json:"user_id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-}
-
-// TeamRole represents a team's assignment to a role
-type TeamRole struct {
-	ID        int64     `db:"id" json:"id"`
-	TeamID    int64     `db:"team_id" json:"team_id"`
-	RoleID    int64     `db:"role_id" json:"role_id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-}
-
-// RoleWithSummary extends Role with computed fields for API responses
-type RoleWithSummary struct {
-	Role
-	UserCount int64          `json:"user_count,omitempty"`
-	TeamCount int64          `json:"team_count,omitempty"`
-	Summary   map[string]any `json:"summary_fields,omitempty"`
-}
-
-// Permission actions
-const (
-	PermissionRead    = "read"
-	PermissionCreate  = "create"
-	PermissionUpdate  = "update"
-	PermissionDelete  = "delete"
-	PermissionExecute = "execute"
-	PermissionAdmin   = "admin"
-	PermissionUse     = "use"
-	PermissionAdhoc   = "adhoc"
 )
