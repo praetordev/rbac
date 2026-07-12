@@ -12,12 +12,20 @@ import (
 // capability SQL (a global NULL-scoped object role whose definition grants the
 // codename, UNION a materialised role_evaluations row for the exact object).
 //
-// It owns only the capability tables (dab_permissions, role_definitions,
-// role_definition_permissions, object_roles, role_*_assignments,
-// role_evaluations) and the rebuild_object_role_evaluations function. The one
-// place it must reach a consumer's domain schema — "every id of content type X"
-// — is injected as a content-type→table map, so this package stays free of any
-// particular application's table names.
+// It assumes a fixed schema exists in the consumer's database:
+//   - the capability tables — dab_permissions, role_definitions,
+//     role_definition_permissions, object_roles, role_user_assignments,
+//     role_team_assignments, role_evaluations — and the
+//     rebuild_object_role_evaluations function;
+//   - a team_members(team_id, user_id) membership table, joined to resolve a
+//     team-granted role to its member users.
+//
+// It is agnostic only to WHICH resource types you protect: the "every id of
+// content type X" lookup (the see-all tier) reads its table name from the
+// injected content-type→table map. It is NOT agnostic to the capability schema
+// or to team_members — this package owns the model but not its migrations, so
+// the consumer must provision that schema (and the two libraries version in
+// lockstep with it).
 //
 // The legacy is_superuser bypass is NOT here; it lives in WithLegacySystemFlags,
 // which decorates this store.
