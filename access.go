@@ -8,9 +8,9 @@ import (
 
 // AccessChecker holds the DB handle for the residual RBAC helpers that survived the
 // capability cutover (#99). Authorization itself runs on the DAB capability model
-// (services/api/store.CapabilityStore); what remains here is object→organization
-// resolution used by the access handlers' org fence, and the shared dual-write bridge
-// (capability_grant.go) that mirrors a legacy-shaped grant into the capability tables.
+// (CapabilityStore); what remains here is object→organization resolution used by the
+// access handlers' org fence, and the shared dual-write bridge (capability_grant.go)
+// that mirrors a legacy-shaped grant into the capability tables.
 type AccessChecker struct {
 	DB *sqlx.DB
 }
