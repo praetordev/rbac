@@ -78,9 +78,10 @@ type GrantTrace struct {
 	Cond  *CondTrace
 }
 
-// RuleTrace is the per-rule record: its outcome, whether it was the rule that locked the
-// verdict, and the per-grant match attempts that justify the outcome.
+// RuleTrace is the per-rule record: its stable ID, outcome, whether it was the rule that
+// locked the verdict, and the per-grant match attempts that justify the outcome.
 type RuleTrace struct {
+	ID       int
 	Name     string
 	Effect   Effect
 	Outcome  RuleOutcome

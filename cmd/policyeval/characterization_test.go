@@ -12,16 +12,54 @@ import "testing"
 // Reasons are pinned verbatim: the Reason string is part of the observable decision, so a
 // change to it is a behaviour change we want surfaced, not smuggled in.
 
-type verdict struct {
-	allow  bool
-	reason string
+// event is the REAL observable decision: did it permit, which rule decided, and with what
+// effect. It deliberately does NOT include the Reason prose — that string is a rendering of
+// this same event, so pinning it would lock incidental wording as if it were behaviour.
+//
+// The deciding rule is authored here by NAME for readability, but the assertion keys on the
+// decision's stable rule ID (via Decision.Decider), resolving the name against the fixture.
+// Names are unique in this fixture (pinned by TestCharacterizationFixtureShape); the ID is
+// what makes "which rule decided" unambiguous even if they weren't.
+type event struct {
+	allow   bool
+	decider string // fixture rule NAME; "" means no rule decided (default-deny)
+	effect  Effect // meaningful only when decider != ""
 }
 
-func checkVerdict(t *testing.T, label string, d Decision, want verdict) {
+// idOf resolves a fixture rule name to its stable ID.
+func idOf(t *testing.T, rules []Rule, name string) int {
 	t.Helper()
-	if d.Allow != want.allow || d.Reason != want.reason {
-		t.Errorf("%s: got {allow=%v reason=%q}, want {allow=%v reason=%q}",
-			label, d.Allow, d.Reason, want.allow, want.reason)
+	for _, r := range rules {
+		if r.Name == name {
+			return r.ID
+		}
+	}
+	t.Fatalf("fixture has no rule named %q", name)
+	return -1
+}
+
+func checkEvent(t *testing.T, label string, rules []Rule, d Decision, want event) {
+	t.Helper()
+	ref, decided := d.Decider()
+
+	if d.Allow != want.allow {
+		t.Errorf("%s: allow = %v, want %v", label, d.Allow, want.allow)
+	}
+	if want.decider == "" {
+		if decided {
+			t.Errorf("%s: expected no decider (default-deny), got rule %d %q", label, ref.ID, ref.Name)
+		}
+		return
+	}
+	if !decided {
+		t.Errorf("%s: expected deciding rule %q, got none", label, want.decider)
+		return
+	}
+	if wantID := idOf(t, rules, want.decider); ref.ID != wantID {
+		t.Errorf("%s: deciding rule id = %d (%q), want %d (%q)", label, ref.ID, ref.Name, wantID, want.decider)
+	}
+	if ref.Effect != want.effect {
+		t.Errorf("%s: deciding effect = %v, want %v", label, ref.Effect, want.effect)
 	}
 }
 
@@ -63,38 +101,38 @@ func TestCharacterizationCapabilitySuite(t *testing.T) {
 	cases := []struct {
 		name          string
 		q             Query
-		denyOverrides verdict
-		firstMatch    verdict
+		denyOverrides event
+		firstMatch    event
 	}{
 		{
 			"global grant of the exact capability",
 			Query{Grants: []Grant{{"read", "", Allow}}, Need: "read", Scope: "obj1"},
-			verdict{true, "allowed by exact-global"},
-			verdict{true, "ALLOW by exact-global"},
+			event{allow: true, decider: "exact-global", effect: Allow},
+			event{allow: true, decider: "exact-global", effect: Allow},
 		},
 		{
 			"scoped grant, matching scope",
 			Query{Grants: []Grant{{"read", "obj1", Allow}}, Need: "read", Scope: "obj1"},
-			verdict{true, "allowed by exact-scoped"},
-			verdict{true, "ALLOW by exact-scoped"},
+			event{allow: true, decider: "exact-scoped", effect: Allow},
+			event{allow: true, decider: "exact-scoped", effect: Allow},
 		},
 		{
 			"scoped grant, different scope",
 			Query{Grants: []Grant{{"read", "obj1", Allow}}, Need: "read", Scope: "obj2"},
-			verdict{false, "default-deny (no rule matched)"},
-			verdict{false, "default-deny (no rule matched)"},
+			event{allow: false, decider: ""}, // default-deny: no rule decided
+			event{allow: false, decider: ""},
 		},
 		{
 			"global wildcard",
 			Query{Grants: []Grant{{"*", "", Allow}}, Need: "write", Scope: "obj5"},
-			verdict{true, "allowed by wildcard-global"},
-			verdict{true, "ALLOW by wildcard-global"},
+			event{allow: true, decider: "wildcard-global", effect: Allow},
+			event{allow: true, decider: "wildcard-global", effect: Allow},
 		},
 		{
 			"scoped wildcard on the scope",
 			Query{Grants: []Grant{{"*", "obj3", Allow}}, Need: "read", Scope: "obj3"},
-			verdict{true, "allowed by wildcard-scoped"},
-			verdict{true, "ALLOW by wildcard-scoped"},
+			event{allow: true, decider: "wildcard-scoped", effect: Allow},
+			event{allow: true, decider: "wildcard-scoped", effect: Allow},
 		},
 		{
 			// The pivotal case: a global wildcard permits, an explicit scoped deny forbids.
@@ -102,28 +140,29 @@ func TestCharacterizationCapabilitySuite(t *testing.T) {
 			// divergence is the whole reason both strategies exist — lock it hard.
 			"global wildcard + explicit scoped deny",
 			Query{Grants: []Grant{{"*", "", Allow}, {"write", "obj9", Deny}}, Need: "write", Scope: "obj9"},
-			verdict{false, "denied by explicit-deny"},
-			verdict{true, "ALLOW by wildcard-global"},
+			event{allow: false, decider: "explicit-deny", effect: Deny},
+			event{allow: true, decider: "wildcard-global", effect: Allow},
 		},
 		{
 			"no grants",
 			Query{Grants: nil, Need: "read", Scope: "obj1"},
-			verdict{false, "default-deny (no rule matched)"},
-			verdict{false, "default-deny (no rule matched)"},
+			event{allow: false, decider: ""},
+			event{allow: false, decider: ""},
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			checkVerdict(t, "deny-overrides", evaluate(rules, tc.q, denyOverrides), tc.denyOverrides)
-			checkVerdict(t, "first-match", evaluate(rules, tc.q, firstMatch), tc.firstMatch)
+			checkEvent(t, "deny-overrides", rules, evaluate(rules, tc.q, denyOverrides), tc.denyOverrides)
+			checkEvent(t, "first-match", rules, evaluate(rules, tc.q, firstMatch), tc.firstMatch)
 		})
 	}
 }
 
-// TestCharacterizationStrategyDivergence pins the pivotal case at the STRUCTURAL level, not
-// just the verdict: under deny-overrides the permit is provisional and the deny is
-// decisive; under first-match the permit is decisive and the deny is never considered.
+// TestCharacterizationStrategyDivergence pins the pivotal case: a global wildcard permits
+// while an explicit scoped deny forbids. The two strategies disagree, and the disagreement
+// is the whole reason both exist. Expressed as the real event — a different rule decides,
+// with a different effect and verdict — not as internal Outcome/Decisive flags.
 func TestCharacterizationStrategyDivergence(t *testing.T) {
 	rules, err := parsePolicy(policyJSON)
 	if err != nil {
@@ -131,25 +170,11 @@ func TestCharacterizationStrategyDivergence(t *testing.T) {
 	}
 	q := Query{Grants: []Grant{{"*", "", Allow}, {"write", "obj9", Deny}}, Need: "write", Scope: "obj9"}
 
-	do := evaluate(rules, q, denyOverrides)
-	if do.Allow {
-		t.Fatal("deny-overrides must DENY the pivotal case")
-	}
-	if permit := findRule(t, do, "wildcard-global"); permit.Outcome != OutcomeAllow || permit.Decisive {
-		t.Errorf("deny-overrides: wildcard-global should be a provisional (non-decisive) allow, got outcome=%v decisive=%v", permit.Outcome, permit.Decisive)
-	}
-	if deny := findRule(t, do, "explicit-deny"); deny.Outcome != OutcomeDeny || !deny.Decisive {
-		t.Errorf("deny-overrides: explicit-deny should be the decisive deny, got outcome=%v decisive=%v", deny.Outcome, deny.Decisive)
-	}
+	// deny-overrides: the deny wins.
+	checkEvent(t, "deny-overrides", rules, evaluate(rules, q, denyOverrides),
+		event{allow: false, decider: "explicit-deny", effect: Deny})
 
-	fm := evaluate(rules, q, firstMatch)
-	if !fm.Allow {
-		t.Fatal("first-match must ALLOW the pivotal case")
-	}
-	if permit := findRule(t, fm, "wildcard-global"); permit.Outcome != OutcomeAllow || !permit.Decisive {
-		t.Errorf("first-match: wildcard-global should be the decisive allow, got outcome=%v decisive=%v", permit.Outcome, permit.Decisive)
-	}
-	if deny := findRule(t, fm, "explicit-deny"); deny.Outcome != OutcomeSkipped {
-		t.Errorf("first-match: explicit-deny should be skipped once the verdict is locked, got outcome=%v", deny.Outcome)
-	}
+	// first-match: the earlier permit wins; the deny never decides.
+	checkEvent(t, "first-match", rules, evaluate(rules, q, firstMatch),
+		event{allow: true, decider: "wildcard-global", effect: Allow})
 }

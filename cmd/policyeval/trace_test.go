@@ -165,6 +165,12 @@ func TestTraceOnVsTraceOffIdenticalDecision(t *testing.T) {
 				t.Errorf("[%s q%d] trace-on {%v,%q} != trace-off {%v,%q}",
 					name, i, on.Allow, on.Reason, off.Allow, off.Reason)
 			}
+			onRef, onOK := on.Decider()
+			offRef, offOK := off.Decider()
+			if onRef != offRef || onOK != offOK {
+				t.Errorf("[%s q%d] trace-on decider {%+v,%v} != trace-off {%+v,%v}",
+					name, i, onRef, onOK, offRef, offOK)
+			}
 			if on.trace == nil {
 				t.Errorf("[%s q%d] trace-on produced no trace", name, i)
 			}

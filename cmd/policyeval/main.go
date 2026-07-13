@@ -185,11 +185,26 @@ func (e Effect) token() string {
 
 // Rule is a named condition tree with an effect. Cond describes the shape of a grant
 // that satisfies the rule; matches() checks whether the subject holds such a grant.
+//
+// ID is a stable, collision-free identifier assigned at parse time (the rule's position in
+// the policy). Names come from policy authors and can collide; ID cannot, so "which rule
+// decided" is answered by ID, never by Name.
 type Rule struct {
+	ID     int
 	Name   string
 	Effect Effect
 	Cond   *Node
 }
+
+// RuleRef identifies a rule unambiguously by its stable ID, carrying Name/Effect for
+// display. It is what a Decision reports as its decider.
+type RuleRef struct {
+	ID     int
+	Name   string
+	Effect Effect
+}
+
+func refOf(r Rule) RuleRef { return RuleRef{ID: r.ID, Name: r.Name, Effect: r.Effect} }
 
 // ---- Policy format + parser (JSON text -> rules -> condition trees) -------------
 
@@ -230,7 +245,7 @@ func parsePolicy(data []byte) ([]Rule, error) {
 		if err != nil {
 			return nil, fmt.Errorf("rule %q: %w", rr.Name, err)
 		}
-		out[i] = Rule{Name: rr.Name, Effect: eff, Cond: cond}
+		out[i] = Rule{ID: i, Name: rr.Name, Effect: eff, Cond: cond}
 	}
 	return out, nil
 }
@@ -338,7 +353,28 @@ type Decision struct {
 	Reason   string
 	Snapshot string      // id of the snapshot that produced this decision (stamped outside the fold)
 	locked   bool        // once true, later rules can no longer change the verdict
+	decider  RuleRef     // the rule that set the current verdict (valid iff decided)
+	decided  bool        // whether any rule decided (false == default-deny / fail closed)
 	trace    []RuleTrace // structured, canonical record of every fold step (see trace.go)
+}
+
+// Decider reports the rule that determined this decision, by stable ID, and true — or a
+// zero RuleRef and false when no rule decided (default-deny or fail-closed). This is the
+// public "who decided and how" surface; callers should key on RuleRef.ID, never on Name.
+func (d Decision) Decider() (RuleRef, bool) { return d.decider, d.decided }
+
+// reasonFor derives the human Reason from the decider in ONE place, so deny-overrides,
+// first-match, and default-deny all render the same event the same way (no more "allowed
+// by" vs "ALLOW by" divergence).
+func reasonFor(ref RuleRef, decided bool) string {
+	if !decided {
+		return "default-deny (no rule matched)"
+	}
+	verb := "allowed"
+	if ref.Effect == Deny {
+		verb = "denied"
+	}
+	return verb + " by " + ref.Name
 }
 
 // Strategy is one fold step: combine the running decision with the next rule. It returns
@@ -351,13 +387,14 @@ type Strategy func(acc Decision, r Rule, matched bool) (Decision, RuleOutcome)
 // trace-off path (evalVerdict); the only extra work is recording each rule's match
 // attempts and outcome, which never feeds back into the verdict.
 func evaluate(rules []Rule, q Query, combine Strategy) Decision {
-	acc := Decision{Allow: false, Reason: "default-deny (no rule matched)"}
+	acc := Decision{Allow: false}
 	for _, r := range rules {
 		matched, attempts := traceMatch(r.Cond, q)
 		before := acc.locked
 		var outcome RuleOutcome
 		acc, outcome = combine(acc, r, matched)
 		acc.trace = append(acc.trace, RuleTrace{
+			ID:       r.ID,
 			Name:     r.Name,
 			Effect:   r.Effect,
 			Outcome:  outcome,
@@ -365,22 +402,25 @@ func evaluate(rules []Rule, q Query, combine Strategy) Decision {
 			Attempts: attempts,
 		})
 	}
+	acc.Reason = reasonFor(acc.decider, acc.decided)
 	return acc
 }
 
 // evalVerdict is the TRACE-OFF path: the same fold, computing only the verdict with the
 // pure matcher and building no trace. It exists to prove that tracing has no effect on the
-// decision — evaluate(...).Allow/Reason must equal evalVerdict(...).Allow/Reason.
+// decision — evaluate(...).Allow/Reason/Decider must equal evalVerdict(...)'s.
 func evalVerdict(rules []Rule, q Query, combine Strategy) Decision {
-	acc := Decision{Allow: false, Reason: "default-deny (no rule matched)"}
+	acc := Decision{Allow: false}
 	for _, r := range rules {
 		acc, _ = combine(acc, r, matches(r.Cond, q))
 	}
+	acc.Reason = reasonFor(acc.decider, acc.decided)
 	return acc
 }
 
 // denyOverrides: any matching Deny is final and wins; a matching Allow sets the verdict
-// but a later Deny can still override it. Absent any match, default-deny stands.
+// but a later Deny can still override it. Absent any match, default-deny stands. The
+// deciding rule is recorded as the verdict is set; Reason is derived later, in one place.
 func denyOverrides(acc Decision, r Rule, matched bool) (Decision, RuleOutcome) {
 	switch {
 	case acc.locked:
@@ -388,10 +428,12 @@ func denyOverrides(acc Decision, r Rule, matched bool) (Decision, RuleOutcome) {
 	case !matched:
 		return acc, OutcomeNoMatch
 	case r.Effect == Deny:
-		acc.Allow, acc.Reason, acc.locked = false, "denied by "+r.Name, true
+		acc.Allow, acc.locked = false, true
+		acc.decider, acc.decided = refOf(r), true
 		return acc, OutcomeDeny
-	default: // Allow
-		acc.Allow, acc.Reason = true, "allowed by "+r.Name
+	default: // Allow — provisional; a later matching allow overwrites, a later deny overrides
+		acc.Allow = true
+		acc.decider, acc.decided = refOf(r), true
 		return acc, OutcomeAllow
 	}
 }
@@ -405,8 +447,8 @@ func firstMatch(acc Decision, r Rule, matched bool) (Decision, RuleOutcome) {
 		return acc, OutcomeNoMatch
 	default:
 		acc.Allow = r.Effect == Allow
-		acc.Reason = fmt.Sprintf("%s by %s", r.Effect, r.Name)
 		acc.locked = true
+		acc.decider, acc.decided = refOf(r), true
 		if r.Effect == Deny {
 			return acc, OutcomeDeny
 		}
