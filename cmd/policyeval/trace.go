@@ -134,43 +134,74 @@ func traceValue(n *Node, e env) *ValueTrace {
 	}
 }
 
-// traceCond mirrors evalBool, building a CondTrace whose Result is guaranteed equal to
-// evalBool for the same node/env (both use applyCmp and short-circuit identically).
+// traceCond mirrors evalTri, building a CondTrace whose Result (definitely-true) is
+// guaranteed equal to evalBool for the same node/env. It carries the three-valued result
+// internally so absent-driven `unknown` propagates identically to the decision path; the
+// exported CondTrace.Result is `tri == triTrue`. An absent operand is visible via the
+// ValueTrace's Present flag, so the render can still distinguish absent from present-unequal.
 func traceCond(n *Node, e env) *CondTrace {
+	ct, _ := traceCondTri(n, e)
+	return ct
+}
+
+func traceCondTri(n *Node, e env) (*CondTrace, tri) {
 	switch n.Kind {
 	case KindCmp:
 		l, r := traceValue(n.Left, e), traceValue(n.Right, e)
-		return &CondTrace{Kind: "cmp", Op: n.Op, Left: l, Right: r, Result: applyCmp(n.Op, l.Value, r.Value)}
+		var t tri
+		if !l.Present || !r.Present {
+			t = triUnknown
+		} else {
+			t = triOf(applyCmp(n.Op, l.Value, r.Value))
+		}
+		return &CondTrace{Kind: "cmp", Op: n.Op, Left: l, Right: r, Result: t == triTrue}, t
 	case KindBool:
 		ct := &CondTrace{Kind: "bool", Op: n.Op}
 		switch n.Op {
 		case "and":
-			ct.Result = true
+			r := triTrue
 			for _, k := range n.Kids {
-				kt := traceCond(k, e)
+				kt, kv := traceCondTri(k, e)
 				ct.Kids = append(ct.Kids, kt)
-				if !kt.Result { // short-circuit exactly like evalBool
+				if kv == triFalse { // false dominates — short-circuit exactly like evalTri
 					ct.Result = false
-					return ct
+					return ct, triFalse
+				}
+				if kv == triUnknown {
+					r = triUnknown
 				}
 			}
-			return ct
+			ct.Result = r == triTrue
+			return ct, r
 		case "or":
-			ct.Result = false
+			r := triFalse
 			for _, k := range n.Kids {
-				kt := traceCond(k, e)
+				kt, kv := traceCondTri(k, e)
 				ct.Kids = append(ct.Kids, kt)
-				if kt.Result { // short-circuit exactly like evalBool
+				if kv == triTrue { // true dominates — short-circuit exactly like evalTri
 					ct.Result = true
-					return ct
+					return ct, triTrue
+				}
+				if kv == triUnknown {
+					r = triUnknown
 				}
 			}
-			return ct
+			ct.Result = r == triTrue
+			return ct, r
 		case "not":
-			kt := traceCond(n.Kids[0], e)
+			kt, kv := traceCondTri(n.Kids[0], e)
 			ct.Kids = append(ct.Kids, kt)
-			ct.Result = !kt.Result
-			return ct
+			var t tri
+			switch kv {
+			case triTrue:
+				t = triFalse
+			case triFalse:
+				t = triTrue
+			default:
+				t = triUnknown
+			}
+			ct.Result = t == triTrue
+			return ct, t
 		}
 	}
 	panic("condition: expected a bool node (cmp/bool)")

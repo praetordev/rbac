@@ -117,11 +117,17 @@ opaque compare and the fix is engine code to restore it). Rows 10–11 are genui
   `INTEGRATION.md` states the contract prominently (verified sources only, never
   request-controlled input) with a worked correct-vs-incorrect example on generic
   fixtures. `attribute_contract_test.go` pins absent/empty/null behaviour and trace
-  rendering — including the absent-vs-empty-literal subtlety the contract guards.
-  No engine code added. **Note:** the epic's "absent → comparison false" holds
-  against concrete values, but absent compares *equal* to an empty literal in the
-  decision (engine reads absent as ""); this is documented, not fixed, since a fix
-  would be an engine semantic change outside Story 3's scope. Flagged for a decision.
+  rendering.
+- **Follow-up (absent semantics correctness).** ✅ Done. Pinning surfaced a genuine
+  discrepancy with the epic invariant "absent → comparison false": the engine had
+  silently coerced an absent attribute to `""`, so `attr == lit("")` matched — absent
+  was indistinguishable from present-empty in the verdict. Fixed as its own validated
+  step (three-valued/Kleene logic): an absent operand is `unknown`, never `""`, and
+  propagates through `==`/`!=`/`and`/`or`/`not` so it is never a match — including the
+  negation trap `not(unknown) = unknown`. The invariant now has a tested guarantee
+  (`TestAbsentIsNonMatchEvenAgainstEmptyLiteral`, `TestAbsentOperatorAudit`). This
+  changed the evaluator, so it was done pin-wrong-first → fix → prove-the-flip, not
+  patched into the net.
 - **Story 4 — Policy source integrity (perimeter).** ⏳ Row 11.
 - **Story 5 — Trace disclosure levels (engine feature).** ⏳ Row 12.
 
@@ -173,5 +179,8 @@ needed. *Proof:* `TestByDesign_InjectionShapedValuesAreOpaque`.
   deliberately contain injection tokens like `admin'; permit all`; that is data
   under test, not engine behaviour, so tests are excluded from the guard.)
 - Determinism holds; trace-on and trace-off produce identical decisions.
+- Absent attributes are non-matches against every concrete value (including `""`) and
+  never coerce to `""`; absence propagates by three-valued logic so it can never become
+  a match via `!=` or `not`. Present-empty is distinct from absent in the verdict.
 - All malformed/partial/pathological policy fails closed to deny against the last
   known-good snapshot.

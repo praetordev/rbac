@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -69,26 +70,80 @@ func TestAttributeEmptyIsPresentDistinctFromAbsent(t *testing.T) {
 	}
 }
 
-// KNOWN DEVIATION from the epic invariant "absent -> comparison false".
+// Corrected contract (was TestKnownDeviation_AbsentCollapsesToEmpty): absent is now a
+// NON-MATCH against every concrete value, INCLUDING the empty literal. The verdict — not just
+// the trace — distinguishes absent from present-empty:
+//   - absent == lit("")        -> non-match (was ALLOW under the old absent->"" coercion)
+//   - present("") == lit("")   -> match
 //
-// The engine currently reads an absent attribute as "" in the decision path, so
-// `attr == lit("")` returns TRUE — an absent attribute is indistinguishable from a present
-// empty one in the VERDICT (only the trace separates them). A rule meant to match "present
-// but empty" therefore silently also matches every subject that lacks the attribute, and the
-// verdict looks identical to the intended case.
-//
-// This test PINS that wrong behaviour as-is, so the fix can be proven to flip exactly this
-// and nothing else. It is expected to be updated once absent is corrected to a non-match.
-func TestKnownDeviation_AbsentCollapsesToEmpty(t *testing.T) {
-	rules := mustPolicy(t, `[{"name":"r","effect":"allow","when":{"eq":[{"attr":"subject.dept"},{"lit":""}]}}]`)
+// This is the tested guarantee of the epic invariant "absent -> comparison false".
+func TestAbsentIsNonMatchEvenAgainstEmptyLiteral(t *testing.T) {
+	rule := `[{"name":"r","effect":"allow","when":{"eq":[{"attr":"%s"},{"lit":""}]}}]`
+
+	// Absent attribute vs empty literal -> DENY (the fix; previously ALLOW).
+	absent := mustPolicy(t, fmt.Sprintf(rule, "subject.dept"))
+	dAbsent := evaluate(absent, Query{Grants: []Grant{{"tok", "", Allow}}, Need: "read", Scope: "obj1"}, denyOverrides)
+	if dAbsent.Allow {
+		t.Error("absent attribute must NOT match an empty literal (absent is a non-match against all concrete values)")
+	}
+	if cmp := condOf(t, dAbsent); !cmp.Left.Absent() {
+		t.Error("trace must still mark the operand absent")
+	}
+
+	// Present-but-empty attribute vs empty literal -> ALLOW (unchanged).
+	present := mustPolicy(t, fmt.Sprintf(rule, "scope"))
+	dPresent := evaluate(present, Query{Grants: []Grant{{"tok", "", Allow}}, Need: "read", Scope: ""}, denyOverrides)
+	if !dPresent.Allow {
+		t.Error("present-empty attribute must still match an empty literal")
+	}
+}
+
+// Operator audit: the absent-handling rule (an absent operand -> unknown -> non-match, and
+// unknown propagates by Kleene logic) applied to every operator that could otherwise coerce
+// absent to "". Each row pins the corrected behavior.
+func TestAbsentOperatorAudit(t *testing.T) {
+	// need is present ("read"); subject.dept is absent throughout.
 	q := Query{Grants: []Grant{{"tok", "", Allow}}, Need: "read", Scope: "obj1"}
 
-	d := evaluate(rules, q, denyOverrides)
-	if !d.Allow {
-		t.Error("KNOWN DEVIATION: absent attribute is read as \"\" and so equals the empty literal (currently ALLOW)")
+	cases := []struct {
+		name      string
+		when      string
+		wantAllow bool
+		note      string
+	}{
+		{
+			"!= with absent operand",
+			`{"ne":[{"attr":"subject.dept"},{"lit":"x"}]}`,
+			false,
+			"absent != x is unknown, not true (was: absent coerced to \"\" made \"\" != \"x\" TRUE)",
+		},
+		{
+			"not over absent comparison (negation trap)",
+			`{"not":{"eq":[{"attr":"subject.dept"},{"lit":"x"}]}}`,
+			false,
+			"not(unknown) = unknown, not true (was: not(false) = TRUE)",
+		},
+		{
+			"and with an absent branch",
+			`{"all":[{"eq":[{"attr":"need"},{"lit":"read"}]},{"eq":[{"attr":"subject.dept"},{"lit":"x"}]}]}`,
+			false,
+			"true AND unknown = unknown -> non-match (fails closed on missing data)",
+		},
+		{
+			"or tolerates absent when another branch is true",
+			`{"any":[{"eq":[{"attr":"need"},{"lit":"read"}]},{"eq":[{"attr":"subject.dept"},{"lit":"x"}]}]}`,
+			true,
+			"true OR unknown = true -> a present, satisfied branch still matches",
+		},
 	}
-	if cmp := condOf(t, d); !cmp.Left.Absent() {
-		t.Error("the trace still marks the attribute absent, distinguishing it from a present empty")
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rules := mustPolicy(t, `[{"name":"r","effect":"allow","when":`+tc.when+`}]`)
+			if got := evaluate(rules, q, denyOverrides).Allow; got != tc.wantAllow {
+				t.Errorf("allow = %v, want %v — %s", got, tc.wantAllow, tc.note)
+			}
+		})
 	}
 }
 

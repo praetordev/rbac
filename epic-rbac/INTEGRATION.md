@@ -73,33 +73,42 @@ difference is the trustworthiness of the input, which is yours to guarantee.
 ## Absent, empty, and null attributes
 
 Policies reference attributes by name. Their behaviour when a value is missing,
-empty, or null is predictable and distinct — but has one subtlety worth knowing.
+empty, or null is predictable, and absent is **distinct from empty in the verdict**,
+not just the trace.
 
 | Situation | Meaning | Decision | Trace |
 |---|---|---|---|
-| **Absent** | policy names an attribute the engine does not expose (e.g. `subject.dept`) | compares **false** against any concrete value | rendered `name=<absent>`, tagged `absent(name)` |
-| **Present-empty** | an exposed attribute whose value is `""` (e.g. `scope` on a global check) | matches an empty-literal comparison; unequal to any non-empty value | rendered `name=""`, **present** (never `<absent>`) |
+| **Absent** | policy names an attribute the engine does not expose (e.g. `subject.dept`) | a **non-match** against every concrete value, **including `""`** | rendered `name=<absent>`, tagged `absent(name)` |
+| **Present-empty** | an exposed attribute whose value is `""` (e.g. `scope` on a global check) | **matches** an empty-literal comparison; unequal to any non-empty value | rendered `name=""`, **present** (never `<absent>`) |
 | **Null (condition)** | a `null` where a condition is expected | **rejected at parse** (fail closed) — never a silent match | n/a |
-| **Null (value)** | a JSON `null` in a value position | collapses to the empty string `""` | as present-empty |
+| **Null (value)** | a JSON `null` in a value position | collapses to the empty string `""`, then behaves as present-empty | as present-empty |
 
-**Predictable rule:** an absent attribute makes comparisons against concrete values
-false, and is always visibly distinct in the trace (`<absent>`) from a present empty
-value.
+### The absent-attribute rule (three-valued logic)
 
-**The subtlety:** in the *decision path* an absent attribute is read as `""`, so it
-compares **equal** to an empty literal — identical to a present-empty value. The two
-are separable only in the trace, not in the verdict. This means:
+An absent operand makes its comparison **unknown** — never true, never coerced to
+`""`. Unknown propagates by Kleene logic, applied uniformly to every operator:
 
-- Prefer comparing attributes to **concrete, non-empty** values in policy.
-- Do not rely on `attr == ""` to mean "the attribute is set but empty"; an absent
-  attribute satisfies it too.
-- **Control absence at the source.** Because you resolve attributes from a trusted
-  origin (per the contract above), whether an attribute is present is your decision
-  to make deliberately, not an accident of request shape.
+- `==` / `!=` with an absent operand → **unknown** (an absent value is neither equal
+  nor unequal to anything).
+- `and` → false if any branch is false; else unknown if any is unknown; else true.
+- `or` → true if any branch is true; else unknown if any is unknown; else false.
+- `not(unknown)` → **unknown** (negating an absent comparison stays a non-match — it
+  can never flip absence into a match).
 
-This absent-vs-empty gap is characterised by
-`TestAttributeAbsentEqualsEmptyLiteralInDecisionButTraceDistinct` and the surrounding
-tests in `attribute_contract_test.go`.
+**A rule matches only when its condition is definitely true.** Unknown and false are
+both non-matches, so:
+
+- An absent attribute never causes a match — not via `==`, not via `!=`, not via
+  `not(...)`.
+- `attr == ""` means "the attribute is present and empty" — an absent attribute does
+  **not** satisfy it. (This was previously a footgun: the engine silently read absent
+  as `""` and matched; it is now corrected — see TRUST-BOUNDARY.md, row 10.)
+- `or` still tolerates a missing attribute if another branch is definitely true; `and`
+  fails closed if any branch depends on missing data.
+
+This behaviour is pinned by `attribute_contract_test.go`
+(`TestAbsentIsNonMatchEvenAgainstEmptyLiteral`, `TestAbsentOperatorAudit`, and the
+absent/empty cases).
 
 ---
 

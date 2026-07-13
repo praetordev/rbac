@@ -110,44 +110,99 @@ func applyCmp(op, l, r string) bool {
 	panic("condition: unknown comparison " + op)
 }
 
-func evalString(n *Node, e env) string {
+// tri is a three-valued (Kleene) truth value. An absent attribute makes a comparison
+// triUnknown — never triTrue — so absence never coerces to "" and never causes a match,
+// directly or through negation. A rule matches only when its condition is triTrue.
+type tri int8
+
+const (
+	triFalse tri = iota
+	triTrue
+	triUnknown
+)
+
+func triOf(b bool) tri {
+	if b {
+		return triTrue
+	}
+	return triFalse
+}
+
+// evalValue resolves a value node to its string value and whether it is PRESENT. Literals
+// are always present; an attribute is absent when the engine does not expose it.
+func evalValue(n *Node, e env) (value string, present bool) {
 	switch n.Kind {
 	case KindAttr:
-		v, _ := e.lookup(n.Attr) // decision path treats an absent attribute as "" (unchanged behaviour)
-		return v
+		return e.lookup(n.Attr)
 	case KindLiteral:
-		return n.Literal
+		return n.Literal, true
 	default:
 		panic("condition: expected a value node (attr/literal)")
 	}
 }
 
-func evalBool(n *Node, e env) bool {
+// evalTri evaluates a condition under three-valued logic. The absent-handling rule, applied
+// uniformly to every operator:
+//   - Comparison (==, !=): if EITHER operand is absent, the result is triUnknown — an absent
+//     value is not comparable and can never be equal or unequal to anything, so it is never a
+//     match. It is never read as "".
+//   - and: triFalse if any branch is false; else triUnknown if any is unknown; else triTrue.
+//   - or:  triTrue if any branch is true; else triUnknown if any is unknown; else triFalse.
+//   - not: not(unknown) = unknown — a negated absent comparison stays a non-match (this
+//     closes the negation trap: absence can never flip into a match via not).
+//
+// A grant satisfies the condition only when evalTri == triTrue (see matches); triUnknown and
+// triFalse are both non-matches.
+func evalTri(n *Node, e env) tri {
 	switch n.Kind {
 	case KindCmp:
-		return applyCmp(n.Op, evalString(n.Left, e), evalString(n.Right, e))
+		lv, lp := evalValue(n.Left, e)
+		rv, rp := evalValue(n.Right, e)
+		if !lp || !rp {
+			return triUnknown
+		}
+		return triOf(applyCmp(n.Op, lv, rv))
 	case KindBool:
 		switch n.Op {
 		case "and":
+			r := triTrue
 			for _, k := range n.Kids {
-				if !evalBool(k, e) {
-					return false
+				switch evalTri(k, e) {
+				case triFalse:
+					return triFalse // false dominates
+				case triUnknown:
+					r = triUnknown
 				}
 			}
-			return true
+			return r
 		case "or":
+			r := triFalse
 			for _, k := range n.Kids {
-				if evalBool(k, e) {
-					return true
+				switch evalTri(k, e) {
+				case triTrue:
+					return triTrue // true dominates
+				case triUnknown:
+					r = triUnknown
 				}
 			}
-			return false
+			return r
 		case "not":
-			return !evalBool(n.Kids[0], e)
+			switch evalTri(n.Kids[0], e) {
+			case triTrue:
+				return triFalse
+			case triFalse:
+				return triTrue
+			default:
+				return triUnknown
+			}
 		}
 	}
 	panic("condition: expected a bool node (cmp/bool)")
 }
+
+// evalBool is the boolean view of the decision path: a condition holds only when it is
+// definitely true. Absent/unknown is a non-match.
+func evalBool(n *Node, e env) bool { return evalTri(n, e) == triTrue }
 
 // matches supplies the existential over grants: a rule condition holds when SOME grant
 // satisfies the tree. (A query with no grants matches nothing — default-deny.)
