@@ -5,20 +5,16 @@ import (
 	"time"
 )
 
-// ── DAB-style capability model (Gitea #94, epic #93) ────────────────────────────
+// ── Capability model ────────────────────────────────────────────────────────────
 //
 // This file is the single source of truth for the capability CATALOG: the set of
 // atomic (content_type, action) permissions the system understands. cmd/migrator
-// seeds dab_permissions from PermissionCatalog() on every run (idempotent), the same
-// way credential_types are seeded, so the vocabulary lives in code rather than in a
-// migration comment.
+// seeds dab_permissions from PermissionCatalog() on every run (idempotent), so the
+// vocabulary lives in code rather than in a migration comment.
 //
 // A capability is one (ContentType, Action). Its codename is "<action>_<content_type>"
-// e.g. "view_inventory", "execute_job_template". A RoleDefinition (later phases) is a
-// named bundle of these; that is what an operator — or an LDAP group mapping — grants.
-//
-// This is additive: it does not replace the legacy RoleField/action checks yet. #95
-// mirrors the legacy roles as managed RoleDefinitions; #97 switches enforcement over.
+// e.g. "view_inventory", "execute_job_template". A RoleDefinition is a named bundle of
+// these; that is what an operator — or an LDAP group mapping — grants.
 
 // Action is an atomic verb a capability grants on a content type.
 type Action string
@@ -32,7 +28,7 @@ const (
 	ActionUse     Action = "use"     // reference in a job template (project/inventory/credential)
 	ActionExecute Action = "execute" // launch (job template / workflow template)
 	ActionUpdate  Action = "update"  // SCM update / inventory-source sync
-	ActionAdhoc   Action = "adhoc"   // run ad-hoc commands (inventory; reserved, see RoleFieldAdhoc)
+	ActionAdhoc   Action = "adhoc"   // run ad-hoc commands (inventory; reserved)
 	ActionApprove Action = "approve" // approve/deny a workflow approval node
 )
 
@@ -73,7 +69,7 @@ type DABPermission struct {
 }
 
 // RoleDefinition is a named bundle of capabilities (a row of role_definitions).
-// Managed definitions mirror the legacy fixed roles; custom ones are operator-defined.
+// Managed definitions are the built-in roles; custom ones are operator-defined.
 type RoleDefinition struct {
 	ID          int64     `db:"id" json:"id"`
 	Name        string    `db:"name" json:"name"`

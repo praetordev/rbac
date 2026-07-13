@@ -47,14 +47,14 @@ func TestManagedRoleNamesUnique(t *testing.T) {
 	}
 }
 
-// A managed role mirrors either a legacy object/org role_field or a singleton — exactly one.
+// A managed role is either a global singleton or an object-scoped role — exactly one.
 func TestManagedRoleIdentityExclusive(t *testing.T) {
 	for _, mr := range ManagedRoles() {
 		isSingleton := mr.Singleton != ""
-		isObject := mr.RoleField != "" && mr.ContentType != ""
+		isObject := mr.ContentType != ""
 		if isSingleton == isObject {
-			t.Errorf("managed role %q must be exactly one of singleton/object (singleton=%q ct=%q field=%q)",
-				mr.Name, mr.Singleton, mr.ContentType, mr.RoleField)
+			t.Errorf("managed role %q must be exactly one of singleton/object (singleton=%q ct=%q)",
+				mr.Name, mr.Singleton, mr.ContentType)
 		}
 	}
 }
@@ -150,36 +150,6 @@ func TestObjectAdminsIncludeManage(t *testing.T) {
 		for _, ct := range CapabilityContentTypes() {
 			if !has(find(t, name), Codename(ct, ActionManage)) {
 				t.Errorf("%s missing %q", name, Codename(ct, ActionManage))
-			}
-		}
-	}
-}
-
-// Every legacy object role_field that enforcement checks has a managed mirror, so no
-// current grant loses meaning under the capability model.
-func TestLegacyObjectRolesCovered(t *testing.T) {
-	want := map[ContentType][]RoleField{
-		ContentTypeProject:          {RoleFieldAdmin, RoleFieldUse, RoleFieldUpdate, RoleFieldRead},
-		ContentTypeInventory:        {RoleFieldAdmin, RoleFieldUse, RoleFieldUpdate, RoleFieldAdhoc, RoleFieldRead},
-		ContentTypeCredential:       {RoleFieldAdmin, RoleFieldUse, RoleFieldRead},
-		ContentTypeJobTemplate:      {RoleFieldAdmin, RoleFieldExecute, RoleFieldRead},
-		ContentTypeWorkflowTemplate: {RoleFieldAdmin, RoleFieldExecute, RoleFieldApproval, RoleFieldRead},
-		ContentTypeTeam:             {RoleFieldAdmin, RoleFieldMember, RoleFieldRead},
-	}
-	covered := map[ContentType]map[RoleField]bool{}
-	for _, mr := range ManagedRoles() {
-		if mr.Singleton != "" {
-			continue
-		}
-		if covered[mr.ContentType] == nil {
-			covered[mr.ContentType] = map[RoleField]bool{}
-		}
-		covered[mr.ContentType][mr.RoleField] = true
-	}
-	for ct, fields := range want {
-		for _, f := range fields {
-			if !covered[ct][f] {
-				t.Errorf("no managed role mirrors legacy %s/%s", ct, f)
 			}
 		}
 	}

@@ -1,56 +1,36 @@
 package rbac
 
-// ── Managed-mirror of the legacy roles (Gitea #95, epic #93) ────────────────────
+// ── Built-in (managed) role definitions ─────────────────────────────────────────
 //
-// For every fixed role_field the legacy RBAC enforces, we declare a managed=true
-// RoleDefinition whose capability (codename) set reproduces what that role grants
-// today. This is the compatibility layer of the DAB port: the managed set exists so
-// current behaviour is preserved before any custom role is created, and so LDAP-by-name
-// (#98) and the enforcement swap (#97) have concrete definitions to target.
+// The built-in RoleDefinitions whose capability (codename) sets define the standard
+// roles. cmd/migrator seeds role_definitions + role_definition_permissions from
+// ManagedRoles() idempotently (managed=true, id-stable), and they are the concrete
+// definitions custom-role and by-name grant paths target.
 //
-// Modelling notes, matching AWX/DAB:
+// Modelling notes:
 //   - A managed role's ContentType is the object type it is ASSIGNED to. Org-level
 //     roles (org admin, the *_admin delegates, auditor, execute, approval) are assigned
 //     to the organization, yet their codenames span CHILD types (e.g. org auditor holds
-//     view_inventory). #96's evaluation propagates a child-typed permission held at org
-//     scope down to the org's children — so we list child codenames here, we do not bake
+//     view_inventory). Evaluation propagates a child-typed permission held at org scope
+//     down to the org's children — so we list child codenames here, we do not bake
 //     per-object rows.
 //   - `add_*` is an org-scoped capability (create children), so it appears only on
 //     org-level definitions, never on object-level admin.
-//   - Approval is a distinct authority: workflow admin does NOT include approve
-//     (mirrors 000049, where wf admin_role is not a parent of approval_role).
-//   - notification_admin_role has no catalog codenames yet (notifications aren't a
-//     capability content type); it is intentionally omitted until they are.
+//   - Approval is a distinct authority: workflow admin does NOT include approve.
 //
-// The declaration is the single source of truth; cmd/migrator seeds role_definitions +
-// role_definition_permissions from ManagedRoles() idempotently (managed=true, id-stable).
+// The declaration is the single source of truth.
 
-// ManagedRole is a built-in RoleDefinition mirroring one legacy role.
+// ManagedRole is a built-in RoleDefinition.
 type ManagedRole struct {
 	Name        string
 	Description string
 	// ContentType is the object type this role is assigned to; "" means a global
 	// singleton (system role) with no object scope.
 	ContentType ContentType
-	// RoleField is the legacy role_field this mirrors ("" for singletons). Together
-	// with ContentType it is the ROLE_DEFINITION_TO_ROLE_FIELD mapping DAB keeps for
-	// dual-run sync.
-	RoleField RoleField
 	// Singleton is set for the two system roles; "" otherwise.
 	Singleton SingletonRole
 	// Codenames is the exact capability set this role confers.
 	Codenames []string
-}
-
-// ManagedNameForLegacy returns the managed RoleDefinition name that mirrors a legacy
-// object/org role_field, for backfilling legacy grants into the capability model.
-func ManagedNameForLegacy(ct ContentType, rf RoleField) (string, bool) {
-	for _, mr := range ManagedRoles() {
-		if mr.Singleton == "" && mr.ContentType == ct && mr.RoleField == rf {
-			return mr.Name, true
-		}
-	}
-	return "", false
 }
 
 // caps builds codenames for a content type from an explicit action list.
@@ -129,24 +109,24 @@ func ManagedRoles() []ManagedRole {
 		// ── Organization roles (assigned to the org; codenames span children) ─
 		{
 			Name: "Organization Admin", Description: "Manage all aspects of the organization.",
-			ContentType: org, RoleField: RoleFieldAdmin, Codenames: everyCodename(),
+			ContentType: org, Codenames: everyCodename(),
 		},
 		{
 			Name: "Organization Member", Description: "Belong to the organization.",
-			ContentType: org, RoleField: RoleFieldMember, Codenames: viewOf(org),
+			ContentType: org, Codenames: viewOf(org),
 		},
 		{
 			Name: "Organization Read", Description: "View the organization's settings.",
-			ContentType: org, RoleField: RoleFieldRead, Codenames: viewOf(org),
+			ContentType: org, Codenames: viewOf(org),
 		},
 		{
 			Name: "Organization Auditor", Description: "View all aspects of the organization.",
-			ContentType: org, RoleField: RoleFieldAuditor,
-			Codenames: concat(viewOf(org), viewOf(orgChildTypes...)),
+			ContentType: org,
+			Codenames:   concat(viewOf(org), viewOf(orgChildTypes...)),
 		},
 		{
 			Name: "Organization Execute", Description: "Run any executable resource in the organization.",
-			ContentType: org, RoleField: RoleFieldExecute,
+			ContentType: org,
 			// Org execute runs both job templates and workflows (000048 + 000049).
 			Codenames: concat(
 				caps(ContentTypeJobTemplate, ActionExecute, ActionView),
@@ -155,152 +135,152 @@ func ManagedRoles() []ManagedRole {
 		},
 		{
 			Name: "Organization Project Admin", Description: "Manage all projects in the organization.",
-			ContentType: org, RoleField: RoleFieldProjectAdmin, Codenames: allCaps(ContentTypeProject),
+			ContentType: org, Codenames: allCaps(ContentTypeProject),
 		},
 		{
 			Name: "Organization Inventory Admin", Description: "Manage all inventories in the organization.",
-			ContentType: org, RoleField: RoleFieldInventoryAdmin, Codenames: allCaps(ContentTypeInventory),
+			ContentType: org, Codenames: allCaps(ContentTypeInventory),
 		},
 		{
 			Name: "Organization Credential Admin", Description: "Manage all credentials in the organization.",
-			ContentType: org, RoleField: RoleFieldCredentialAdmin, Codenames: allCaps(ContentTypeCredential),
+			ContentType: org, Codenames: allCaps(ContentTypeCredential),
 		},
 		{
 			Name: "Organization Job Template Admin", Description: "Manage all job templates in the organization.",
-			ContentType: org, RoleField: RoleFieldJobTemplateAdmin, Codenames: allCaps(ContentTypeJobTemplate),
+			ContentType: org, Codenames: allCaps(ContentTypeJobTemplate),
 		},
 		{
 			Name: "Organization Workflow Admin", Description: "Manage all workflow templates in the organization.",
-			ContentType: org, RoleField: RoleFieldWorkflowAdmin,
+			ContentType: org,
 			// No approve: managing a workflow != approving its gates (000049).
 			Codenames: caps(ContentTypeWorkflowTemplate, ActionAdd, ActionView, ActionChange, ActionDelete, ActionManage, ActionExecute),
 		},
 		{
 			Name: "Organization Approval", Description: "Approve or deny workflow approval nodes in the organization.",
-			ContentType: org, RoleField: RoleFieldApproval,
-			Codenames: caps(ContentTypeWorkflowTemplate, ActionApprove, ActionView),
+			ContentType: org,
+			Codenames:   caps(ContentTypeWorkflowTemplate, ActionApprove, ActionView),
 		},
 
 		// ── Project roles ──────────────────────────────────────────────────
 		{
 			Name: "Project Admin", Description: "Manage all aspects of the project.",
-			ContentType: ContentTypeProject, RoleField: RoleFieldAdmin,
-			Codenames: caps(ContentTypeProject, ActionView, ActionChange, ActionDelete, ActionManage, ActionUse, ActionUpdate),
+			ContentType: ContentTypeProject,
+			Codenames:   caps(ContentTypeProject, ActionView, ActionChange, ActionDelete, ActionManage, ActionUse, ActionUpdate),
 		},
 		{
 			Name: "Project Use", Description: "Use the project in a job template.",
-			ContentType: ContentTypeProject, RoleField: RoleFieldUse,
-			Codenames: caps(ContentTypeProject, ActionUse, ActionView),
+			ContentType: ContentTypeProject,
+			Codenames:   caps(ContentTypeProject, ActionUse, ActionView),
 		},
 		{
 			Name: "Project Update", Description: "Update the project from SCM.",
-			ContentType: ContentTypeProject, RoleField: RoleFieldUpdate,
-			Codenames: caps(ContentTypeProject, ActionUpdate, ActionView),
+			ContentType: ContentTypeProject,
+			Codenames:   caps(ContentTypeProject, ActionUpdate, ActionView),
 		},
 		{
 			Name: "Project Read", Description: "View the project.",
-			ContentType: ContentTypeProject, RoleField: RoleFieldRead,
-			Codenames: caps(ContentTypeProject, ActionView),
+			ContentType: ContentTypeProject,
+			Codenames:   caps(ContentTypeProject, ActionView),
 		},
 
 		// ── Inventory roles ────────────────────────────────────────────────
 		{
 			Name: "Inventory Admin", Description: "Manage all aspects of the inventory.",
-			ContentType: ContentTypeInventory, RoleField: RoleFieldAdmin,
-			Codenames: caps(ContentTypeInventory, ActionView, ActionChange, ActionDelete, ActionManage, ActionUse, ActionUpdate, ActionAdhoc),
+			ContentType: ContentTypeInventory,
+			Codenames:   caps(ContentTypeInventory, ActionView, ActionChange, ActionDelete, ActionManage, ActionUse, ActionUpdate, ActionAdhoc),
 		},
 		{
 			Name: "Inventory Use", Description: "Use the inventory in a job template.",
-			ContentType: ContentTypeInventory, RoleField: RoleFieldUse,
-			Codenames: caps(ContentTypeInventory, ActionUse, ActionView),
+			ContentType: ContentTypeInventory,
+			Codenames:   caps(ContentTypeInventory, ActionUse, ActionView),
 		},
 		{
 			Name: "Inventory Update", Description: "Update the inventory's sources.",
-			ContentType: ContentTypeInventory, RoleField: RoleFieldUpdate,
-			Codenames: caps(ContentTypeInventory, ActionUpdate, ActionView),
+			ContentType: ContentTypeInventory,
+			Codenames:   caps(ContentTypeInventory, ActionUpdate, ActionView),
 		},
 		{
 			Name: "Inventory Adhoc", Description: "Run ad-hoc commands on the inventory.",
-			ContentType: ContentTypeInventory, RoleField: RoleFieldAdhoc,
-			Codenames: caps(ContentTypeInventory, ActionAdhoc, ActionView),
+			ContentType: ContentTypeInventory,
+			Codenames:   caps(ContentTypeInventory, ActionAdhoc, ActionView),
 		},
 		{
 			Name: "Inventory Read", Description: "View the inventory.",
-			ContentType: ContentTypeInventory, RoleField: RoleFieldRead,
-			Codenames: caps(ContentTypeInventory, ActionView),
+			ContentType: ContentTypeInventory,
+			Codenames:   caps(ContentTypeInventory, ActionView),
 		},
 
 		// ── Credential roles ───────────────────────────────────────────────
 		{
 			Name: "Credential Admin", Description: "Manage all aspects of the credential.",
-			ContentType: ContentTypeCredential, RoleField: RoleFieldAdmin,
-			Codenames: caps(ContentTypeCredential, ActionView, ActionChange, ActionDelete, ActionManage, ActionUse),
+			ContentType: ContentTypeCredential,
+			Codenames:   caps(ContentTypeCredential, ActionView, ActionChange, ActionDelete, ActionManage, ActionUse),
 		},
 		{
 			Name: "Credential Use", Description: "Use the credential in a job template.",
-			ContentType: ContentTypeCredential, RoleField: RoleFieldUse,
-			Codenames: caps(ContentTypeCredential, ActionUse, ActionView),
+			ContentType: ContentTypeCredential,
+			Codenames:   caps(ContentTypeCredential, ActionUse, ActionView),
 		},
 		{
 			Name: "Credential Read", Description: "View the credential.",
-			ContentType: ContentTypeCredential, RoleField: RoleFieldRead,
-			Codenames: caps(ContentTypeCredential, ActionView),
+			ContentType: ContentTypeCredential,
+			Codenames:   caps(ContentTypeCredential, ActionView),
 		},
 
 		// ── Job template roles ─────────────────────────────────────────────
 		{
 			Name: "Job Template Admin", Description: "Manage all aspects of the job template.",
-			ContentType: ContentTypeJobTemplate, RoleField: RoleFieldAdmin,
-			Codenames: caps(ContentTypeJobTemplate, ActionView, ActionChange, ActionDelete, ActionManage, ActionExecute),
+			ContentType: ContentTypeJobTemplate,
+			Codenames:   caps(ContentTypeJobTemplate, ActionView, ActionChange, ActionDelete, ActionManage, ActionExecute),
 		},
 		{
 			Name: "Job Template Execute", Description: "Execute the job template.",
-			ContentType: ContentTypeJobTemplate, RoleField: RoleFieldExecute,
-			Codenames: caps(ContentTypeJobTemplate, ActionExecute, ActionView),
+			ContentType: ContentTypeJobTemplate,
+			Codenames:   caps(ContentTypeJobTemplate, ActionExecute, ActionView),
 		},
 		{
 			Name: "Job Template Read", Description: "View the job template.",
-			ContentType: ContentTypeJobTemplate, RoleField: RoleFieldRead,
-			Codenames: caps(ContentTypeJobTemplate, ActionView),
+			ContentType: ContentTypeJobTemplate,
+			Codenames:   caps(ContentTypeJobTemplate, ActionView),
 		},
 
 		// ── Workflow template roles ────────────────────────────────────────
 		{
 			Name: "Workflow Template Admin", Description: "Manage all aspects of the workflow template.",
-			ContentType: ContentTypeWorkflowTemplate, RoleField: RoleFieldAdmin,
-			Codenames: caps(ContentTypeWorkflowTemplate, ActionView, ActionChange, ActionDelete, ActionManage, ActionExecute),
+			ContentType: ContentTypeWorkflowTemplate,
+			Codenames:   caps(ContentTypeWorkflowTemplate, ActionView, ActionChange, ActionDelete, ActionManage, ActionExecute),
 		},
 		{
 			Name: "Workflow Template Execute", Description: "Launch the workflow template.",
-			ContentType: ContentTypeWorkflowTemplate, RoleField: RoleFieldExecute,
-			Codenames: caps(ContentTypeWorkflowTemplate, ActionExecute, ActionView),
+			ContentType: ContentTypeWorkflowTemplate,
+			Codenames:   caps(ContentTypeWorkflowTemplate, ActionExecute, ActionView),
 		},
 		{
 			Name: "Workflow Template Approve", Description: "Approve or deny the workflow's approval nodes.",
-			ContentType: ContentTypeWorkflowTemplate, RoleField: RoleFieldApproval,
-			Codenames: caps(ContentTypeWorkflowTemplate, ActionApprove, ActionView),
+			ContentType: ContentTypeWorkflowTemplate,
+			Codenames:   caps(ContentTypeWorkflowTemplate, ActionApprove, ActionView),
 		},
 		{
 			Name: "Workflow Template Read", Description: "View the workflow template.",
-			ContentType: ContentTypeWorkflowTemplate, RoleField: RoleFieldRead,
-			Codenames: caps(ContentTypeWorkflowTemplate, ActionView),
+			ContentType: ContentTypeWorkflowTemplate,
+			Codenames:   caps(ContentTypeWorkflowTemplate, ActionView),
 		},
 
 		// ── Team roles ─────────────────────────────────────────────────────
 		{
 			Name: "Team Admin", Description: "Manage all aspects of the team.",
-			ContentType: ContentTypeTeam, RoleField: RoleFieldAdmin,
-			Codenames: caps(ContentTypeTeam, ActionView, ActionChange, ActionDelete, ActionManage),
+			ContentType: ContentTypeTeam,
+			Codenames:   caps(ContentTypeTeam, ActionView, ActionChange, ActionDelete, ActionManage),
 		},
 		{
 			Name: "Team Member", Description: "Belong to the team.",
-			ContentType: ContentTypeTeam, RoleField: RoleFieldMember,
-			Codenames: caps(ContentTypeTeam, ActionView),
+			ContentType: ContentTypeTeam,
+			Codenames:   caps(ContentTypeTeam, ActionView),
 		},
 		{
 			Name: "Team Read", Description: "View the team.",
-			ContentType: ContentTypeTeam, RoleField: RoleFieldRead,
-			Codenames: caps(ContentTypeTeam, ActionView),
+			ContentType: ContentTypeTeam,
+			Codenames:   caps(ContentTypeTeam, ActionView),
 		},
 	}
 }
