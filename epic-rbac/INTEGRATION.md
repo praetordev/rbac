@@ -112,6 +112,30 @@ absent/empty cases).
 
 ---
 
+## Trace disclosure — logs vs end users
+
+A decision carries a rich trace so authors can self-diagnose denials. That same trace
+would let an attacker probe and reverse-engineer your ruleset, so choose the audience
+explicitly with `Decision.Disclose(level)`:
+
+- **`Disclose(Full)` → your own logs.** The complete rationale: which rules matched or
+  were skipped, the deciding rule, per-node comparison results, absent-vs-unequal, the
+  snapshot id, and how the strategy reached the verdict.
+- **`Disclose(Minimal)` → the end user.** The verdict only — `access permitted` or
+  `access denied`. It is a constant per verdict, so every denial looks identical: a
+  default-deny, an explicit deny, an absent-attribute deny, and a fail-closed deny are
+  indistinguishable. Nothing about the ruleset leaks.
+
+```
+decision := holder.Decide(q)
+log.Info(requestID, decision.Disclose(Full))   // to your logs, with YOUR correlation id
+http.Error(w, decision.Disclose(Minimal), 403) // to the caller — structure-free
+```
+
+**The zero value of `Disclosure` is `Minimal`**, so forgetting to choose a level fails
+safe (reveals the least). The engine adds no identifier of its own — to correlate a
+user-facing denial with its full logged trace, log `Full` alongside your own request id.
+
 ## Fail-closed posture (recap)
 
 - No snapshot installed → **deny**.

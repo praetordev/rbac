@@ -221,6 +221,51 @@ func traceMatch(cond *Node, q Query) (bool, []GrantTrace) {
 	return false, attempts
 }
 
+// ---- Disclosure levels -----------------------------------------------------------
+
+// Disclosure controls how much of a decision's rationale is revealed.
+//
+// Full is for the CONSUMING APP'S OWN LOGS: the complete rationale — matched/skipped rules,
+// the deciding rule, per-node comparison results, absent-vs-unequal, the snapshot id, and how
+// the combining strategy reached the verdict. It deliberately exposes policy structure.
+//
+// Minimal is safe to surface to the REQUESTER (the party whose access was decided): the
+// verdict, and nothing else. It is identical for every permit and identical for every deny,
+// so it cannot be used to probe or reverse-engineer the ruleset — a denial caused by an
+// absent attribute, an explicit deny, a default-deny, or a fail-closed nil snapshot all read
+// the same.
+//
+// The zero value is Minimal, so a caller that forgets to choose a level fails SAFE (reveals
+// the least). Correlating a requester-facing denial with its full logged trace is the
+// consumer's job — log Full alongside your own request id. The engine adds no identifier of
+// its own, so it stays deterministic.
+type Disclosure int
+
+const (
+	Minimal Disclosure = iota // requester-safe: verdict only, no structure
+	Full                      // app logs: complete rationale
+)
+
+// Disclose renders the decision at the given disclosure level. Rendering is a pure read of an
+// already-computed decision; it never changes the verdict, and neither level's output feeds
+// back into the decision.
+func (d Decision) Disclose(level Disclosure) string {
+	if level == Full {
+		return d.Explain()
+	}
+	return d.minimalReason()
+}
+
+// minimalReason is the structure-free, requester-safe reason: a constant per verdict. It
+// names no rule, attribute, snapshot, or cause, so no two denials (or permits) are
+// distinguishable from it.
+func (d Decision) minimalReason() string {
+	if d.Allow {
+		return "access permitted"
+	}
+	return "access denied"
+}
+
 // ---- Human render (layered on the structured form; the only place words live) ---
 
 // Explain renders a decision's structured trace for a human reader. It reports the final
@@ -392,4 +437,23 @@ func indent(lines []string, pad string) []string {
 		out[i] = pad + l
 	}
 	return out
+}
+
+// demoDisclosure prints the same denial rendered for two audiences: the structure-free
+// Minimal reason for the requester, and the complete Full rationale for the app's logs.
+func demoDisclosure() {
+	snap := mustSnapshot(NewSnapshot("main", policyJSON, denyOverrides))
+	q := Query{Grants: []Grant{{"*", "", Allow}, {"write", "obj9", Deny}}, Need: "write", Scope: "obj9"}
+	d := Decide(snap, q)
+
+	fmt.Println("\n════════ trace disclosure demo ════════")
+	fmt.Println("one denial, two audiences — the decision is identical, only the disclosure differs.")
+
+	fmt.Println("\nto the REQUESTER — Disclose(Minimal), reveals no structure:")
+	fmt.Printf("    %s\n", d.Disclose(Minimal))
+
+	fmt.Println("\nto the APP'S LOGS — Disclose(Full), complete rationale:")
+	for _, line := range strings.Split(d.Disclose(Full), "\n") {
+		fmt.Printf("    %s\n", line)
+	}
 }

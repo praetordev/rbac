@@ -72,7 +72,7 @@ independently: *if this defense were removed, where would the fix have to go?*
 | 9 | Injection-shaped attribute values (`admin'; permit all`, sigils) | By design | Engine test (prove-by-design) | Engine's opaque compare; `TestByDesign_InjectionShapedValuesAreOpaque` |
 | 10 | Attribute sourced from request-controlled input | Upstream | Documented contract | ✅ Attribute trust contract in `INTEGRATION.md`; behaviour pinned by `attribute_contract_test.go` |
 | 11 | Malicious/tampered policy bundle becomes a snapshot | Upstream | Mechanism + docs | Integrity-checked bundles before swap (Story 4) — ⏳ |
-| 12 | Full trace lets an end user probe the ruleset | By design | Engine feature | Trace disclosure levels (full-to-logs vs minimal-to-user) (Story 5) — ⏳ |
+| 12 | Full trace lets an end user probe the ruleset | By design | Engine feature | ✅ `Decision.Disclose(Full\|Minimal)`; minimal is a per-verdict constant, structure-free; `disclosure_test.go` |
 
 ### Reclassification log
 
@@ -129,7 +129,14 @@ opaque compare and the fix is engine code to restore it). Rows 10–11 are genui
   changed the evaluator, so it was done pin-wrong-first → fix → prove-the-flip, not
   patched into the net.
 - **Story 4 — Policy source integrity (perimeter).** ⏳ Row 11.
-- **Story 5 — Trace disclosure levels (engine feature).** ⏳ Row 12.
+- **Story 5 — Trace disclosure levels (engine feature).** ✅ Done. Row 12.
+  `Decision.Disclose(level)` renders at two levels: **Full** (the app's logs —
+  complete rationale: matched/skipped rules, deciding rule, per-node results,
+  absent-vs-unequal, snapshot id, strategy) and **Minimal** (end users — a per-verdict
+  constant, `access permitted`/`access denied`, revealing no structure). The zero value
+  is Minimal, so an unset level fails safe. Every denial discloses the same minimal
+  string regardless of cause, so it cannot be used to probe the ruleset. Rendering never
+  changes the decision (`disclosure_test.go`, plus the standing trace-on/off invariant).
 
 ## Findings (Story 2 — prove-by-design)
 
