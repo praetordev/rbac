@@ -2,6 +2,8 @@ package rbac
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/jmoiron/sqlx"
@@ -169,29 +171,53 @@ func (s *CapabilityStore) GetRoleDefinitionByName(ctx context.Context, name stri
 // getOrCreateObjectRole returns the id of the object_role for (definition, scope),
 // creating it if absent. A nil contentType/objectID pair denotes a global (system)
 // role. Runs in the given tx so it composes with assignment.
+//
+// Concurrency: two callers racing to create the same object_role are made safe by
+// INSERT ... ON CONFLICT DO NOTHING plus a re-SELECT — the loser of the race reads
+// the winner's row rather than failing on the unique violation. This requires the
+// consumer's schema to carry a unique constraint on the scope: a plain unique index
+// on (role_definition_id, content_type, object_id) for scoped roles, and a PARTIAL
+// unique index on (role_definition_id) WHERE content_type IS NULL for the global
+// scope (a plain index does not dedupe NULLs). Without those constraints the
+// ON CONFLICT never fires and concurrent inserts can still duplicate.
 func getOrCreateObjectRole(ctx context.Context, tx *sqlx.Tx, defID int64, contentType *string, objectID *int64) (int64, error) {
-	var id int64
 	// Global vs scoped are distinguished so the NULL-scope lookup matches correctly
 	// (NULL = NULL is never true in a plain equality).
+	var selectQuery, insertQuery string
+	var args []any
 	if contentType == nil {
-		err := tx.GetContext(ctx, &id,
-			`SELECT id FROM object_roles WHERE role_definition_id = $1 AND content_type IS NULL`, defID)
-		if err == nil {
-			return id, nil
-		}
-		err = tx.GetContext(ctx, &id,
-			`INSERT INTO object_roles (role_definition_id, content_type, object_id) VALUES ($1, NULL, NULL) RETURNING id`, defID)
-		return id, err
+		selectQuery = `SELECT id FROM object_roles WHERE role_definition_id = $1 AND content_type IS NULL`
+		insertQuery = `INSERT INTO object_roles (role_definition_id, content_type, object_id) VALUES ($1, NULL, NULL) ON CONFLICT DO NOTHING RETURNING id`
+		args = []any{defID}
+	} else {
+		selectQuery = `SELECT id FROM object_roles WHERE role_definition_id = $1 AND content_type = $2 AND object_id = $3`
+		insertQuery = `INSERT INTO object_roles (role_definition_id, content_type, object_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING id`
+		args = []any{defID, *contentType, *objectID}
 	}
-	err := tx.GetContext(ctx, &id,
-		`SELECT id FROM object_roles WHERE role_definition_id = $1 AND content_type = $2 AND object_id = $3`,
-		defID, *contentType, *objectID)
+
+	var id int64
+	// Fast path: the object_role already exists.
+	err := tx.GetContext(ctx, &id, selectQuery, args...)
 	if err == nil {
 		return id, nil
 	}
-	err = tx.GetContext(ctx, &id,
-		`INSERT INTO object_roles (role_definition_id, content_type, object_id) VALUES ($1, $2, $3) RETURNING id`,
-		defID, *contentType, *objectID)
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, err // a real error (conn reset, cancelled, ...) — do not mistake it for "absent".
+	}
+
+	// Absent: create it. ON CONFLICT DO NOTHING RETURNING yields a row only if we won
+	// the insert; a concurrent inserter makes it return no rows (sql.ErrNoRows).
+	err = tx.GetContext(ctx, &id, insertQuery, args...)
+	if err == nil {
+		return id, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, err
+	}
+
+	// Lost the race: the row now exists (committed by the concurrent inserter, which
+	// this statement blocked on). Re-read it.
+	err = tx.GetContext(ctx, &id, selectQuery, args...)
 	return id, err
 }
 
