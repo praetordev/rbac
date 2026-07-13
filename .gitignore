@@ -1,0 +1,6 @@
+# Working scratch / task directives — kept local, out of the repo.
+# Canonical epic deliverables are the committed .md files (rbac-adversarial.md,
+# pre-work.md, TRUST-BOUNDARY.md). These are notes-to-self / redundant summaries.
+epic-rbac/*.mb
+epic-rbac/row-six.md
+epic-rbac/reclassification-summary.md

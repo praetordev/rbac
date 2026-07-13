@@ -40,24 +40,68 @@ engine's own **liveness**, not the meaning of any input.
 
 ## Classification
 
-Legend — **Design**: closed by design, no engine change. **Parser**: closed by
-bounding the parser. **Perimeter**: closed upstream; the documented contract is
-the defense.
+**Classification** (category — *where* the threat is actually closed) and
+**Demonstration** (technique — *how* we show it) are ORTHOGONAL axes and live in
+separate columns. They are not the same thing: an upstream-closed threat can still
+be demonstrated by an engine test (rows 7–8 are exactly that). Filing a row by its
+technique is the bug this split prevents — a threat demonstrated in the engine
+suite but actually closed at the perimeter must NOT read as "the engine handles
+it," or the perimeter work silently never gets built.
 
-| # | Threat | Class | Where the defense lives | Proof / status |
-|---|--------|-------|-------------------------|----------------|
-| 1 | Deeply-nested policy exhausts stack/CPU at parse | Parser | `maxDepth` bound | ✅ `TestParserRejectsDeepNesting` |
-| 2 | Wide policy (node blowup) exhausts memory | Parser | `maxNodes` budget | ✅ `TestParserRejectsWideNodeCount` |
-| 3 | Huge rule count / oversized document / giant literal | Parser | `maxRules` / `maxPolicyBytes` / `maxLiteralLen` | ✅ `TestParserRejectsTooManyRules`, `…OversizedDocument`, `…HugeLiteral` |
-| 4 | Ambiguous condition dispatch (0 or 2+ keys) | Parser | Distinct, actionable parse errors | ✅ `TestParserZeroKeyVsMultiKeyDistinctErrors` |
-| 5 | Unknown node type / operator / wrong operand count | Parser | Clear rejection at parse | ✅ `TestParserClearErrorsForMalformed` |
-| 6 | Malformed/pathological load opens or clears access | Parser (fail closed) | `Holder.Load` keeps last known-good; empty stays deny | ✅ `TestBadLoadFailsClosedToLastKnownGood`, `…WithNoKnownGood…` |
-| 7 | Permit-always / overly-broad policy | Perimeter | **Policy source** (Story 4), not the evaluator | ✅ `TestByDesign_PermitAlwaysPolicyEvaluatedFaithfully` |
-| 8 | Forged attributes (e.g. fake grant/`subject.roles`) | Perimeter | **Attribute-resolution trust boundary** (Story 3); origin is unrepresented by design | ✅ `TestByDesign_ForgedGrantIndistinguishableFromReal` |
-| 9 | Injection-shaped attribute values (`admin'; permit all`, sigils) | Design | Opaque compare — no interpretation, no execution | ✅ `TestByDesign_InjectionShapedValuesAreOpaque` |
-| 10 | Attribute sourced from request-controlled input | Perimeter | Documented attribute trust contract | ⏳ Story 3 |
-| 11 | Malicious/tampered policy bundle becomes a snapshot | Perimeter | Authenticated/integrity-checked bundles before swap | ⏳ Story 4 |
-| 12 | Full trace lets an end user probe the ruleset | Engine feature | Trace disclosure levels (full-to-logs vs minimal-to-user) | ⏳ Story 5 |
+**Classification** is assigned by the removal test, applied to each row's defense
+independently: *if this defense were removed, where would the fix have to go?*
+
+- Fix goes in the engine's own logic/behaviour → **By design**
+- Fix goes in a parser limit/rejection → **By bounding the parser**
+- Fix goes in the perimeter (policy source / attribute layer) → **Upstream**
+
+**Demonstration** is how the classification is evidenced: an **engine test**, a
+**documented contract** (the enforcement mechanism for upstream threats), or an
+**engine feature** yet to be built.
+
+| # | Threat | Classification | Demonstration | Defense location + proof |
+|---|--------|----------------|---------------|--------------------------|
+| 1 | Deeply-nested policy exhausts stack/CPU at parse | By bounding the parser | Engine test | `maxDepth`; `TestParserRejectsDeepNesting` |
+| 2 | Wide policy (node blowup) exhausts memory | By bounding the parser | Engine test | `maxNodes`; `TestParserRejectsWideNodeCount` |
+| 3 | Huge rule count / oversized document / giant literal | By bounding the parser | Engine test | `maxRules`/`maxPolicyBytes`/`maxLiteralLen`; `TestParserRejectsTooManyRules`, `…OversizedDocument`, `…HugeLiteral` |
+| 4 | Ambiguous condition dispatch (0 or 2+ keys) | By bounding the parser | Engine test | Distinct parse errors; `TestParserZeroKeyVsMultiKeyDistinctErrors` |
+| 5 | Unknown node type / operator / wrong operand count | By bounding the parser | Engine test | Clear parse rejection; `TestParserClearErrorsForMalformed` |
+| 6 | Malformed/pathological load opens or clears access | By design | Engine test | `Holder.Load` fails closed to last known-good. Lives in Story 1 alongside the parser bound, but classified By design because the fail-closed *decision* is loader logic, not the bound itself. `TestBadLoadFailsClosedToLastKnownGood`, `…WithNoKnownGood…` |
+| 7 | Permit-always / overly-broad policy | Upstream | Engine test (prove-by-design) | **Policy source** (Story 4); `TestByDesign_PermitAlwaysPolicyEvaluatedFaithfully` |
+| 8 | Forged attributes (e.g. fake grant/`subject.roles`) | Upstream | Engine test (prove-by-design) | **Attribute-resolution boundary** (Story 3); provenance unrepresented in `Grant` by design; `TestByDesign_ForgedGrantIndistinguishableFromReal` |
+| 9 | Injection-shaped attribute values (`admin'; permit all`, sigils) | By design | Engine test (prove-by-design) | Engine's opaque compare; `TestByDesign_InjectionShapedValuesAreOpaque` |
+| 10 | Attribute sourced from request-controlled input | Upstream | Documented contract | Attribute trust contract (Story 3) — ⏳ |
+| 11 | Malicious/tampered policy bundle becomes a snapshot | Upstream | Mechanism + docs | Integrity-checked bundles before swap (Story 4) — ⏳ |
+| 12 | Full trace lets an end user probe the ruleset | By design | Engine feature | Trace disclosure levels (full-to-logs vs minimal-to-user) (Story 5) — ⏳ |
+
+### Reclassification log
+
+Applying the removal test independently to every row changed four category labels
+(none of the underlying demonstrations changed):
+
+- **Row 6** Parser → **By design.** Remove `Holder.Load`'s fail-closed guard and the
+  fix is engine loader logic (keep last known-good), not a parser bound. Two distinct
+  defenses fire on the same input: the bound **rejects** the pathological policy (a
+  parser concern), while failing closed **decides** what to do with a rejection — deny
+  against last known-good (a loader concern). Row 6 is the second, and the tests assert
+  that deny *consequence* (`h.Decide` still denies write, empty holder denies), not
+  merely that the parser rejected. "Parser-adjacent" is context/provenance, not where
+  the fix lives; filing it under bounding would reintroduce the technique-vs-category
+  conflation.
+- **Row 7** Design → **Upstream.** Remove trust in the policy source and the fix is
+  vetting/signing that source — there is no engine logic to fix; the engine
+  faithfully evaluates whatever it is handed.
+- **Row 8** Design → **Upstream.** Provenance is unrepresented in `Grant` by design;
+  remove the defense and there is nothing to fix *in the engine* because there was
+  never engine logic there — the fix lives entirely at Story 3's boundary.
+- **Row 12** "Engine feature" → **By design.** "Engine feature" named a technique,
+  not a category. Remove trace disclosure levels and the fix is engine code (add the
+  minimal/full split) → by design.
+
+Rows 7–8 were first corrected in a prior commit; the removal-test audit confirms
+them and additionally moves rows 6 and 12. Row 9 stays **By design** (remove the
+opaque compare and the fix is engine code to restore it). Rows 10–11 are genuinely
+**Upstream** (documented contract / integrity mechanism at the perimeter).
 
 ## Story status
 
