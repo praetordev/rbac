@@ -6,11 +6,9 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// AccessChecker holds the DB handle for the residual RBAC helpers that survived the
-// capability cutover (#99). Authorization itself runs on the DAB capability model
-// (CapabilityStore); what remains here is object→organization resolution used by the
-// access handlers' org fence, and the shared dual-write bridge (capability_grant.go)
-// that mirrors a legacy-shaped grant into the capability tables.
+// AccessChecker holds the DB handle for object→organization resolution used by the
+// access handlers' org fence. Authorization itself runs on the capability model
+// (CapabilityStore); this is a resolution helper, not a decision point.
 type AccessChecker struct {
 	DB *sqlx.DB
 }

@@ -28,9 +28,6 @@ import (
 // or to team_members — this package owns the model but not its migrations, so
 // the consumer must provision that schema (and the two libraries version in
 // lockstep with it).
-//
-// The legacy is_superuser bypass is NOT here; it lives in WithLegacySystemFlags,
-// which decorates this store.
 type CapabilityStore struct {
 	db     *sqlx.DB
 	tables map[ContentType]string
@@ -73,8 +70,7 @@ func (s *CapabilityStore) CanGlobal(ctx context.Context, sub Subject, codename s
 
 // VisibleIDs implements Authorizer: the object ids of t on which sub holds
 // action, unifying the two tiers — a global grant of the codename sees every
-// object of the type; otherwise the scoped (materialised) rows. The break-glass
-// superuser case (no per-object rows) is handled by the legacy decorator.
+// object of the type; otherwise the scoped (materialised) rows.
 func (s *CapabilityStore) VisibleIDs(ctx context.Context, sub Subject, action Action, t ContentType) ([]int64, error) {
 	codename := Codename(t, action)
 	global, err := s.HasGlobalCapability(ctx, sub.UserID, codename)

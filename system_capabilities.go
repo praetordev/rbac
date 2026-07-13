@@ -2,9 +2,8 @@ package rbac
 
 // ── System (global-scope-only) capabilities ─────────────────────────────────────
 //
-// These are the administrative authorities that the legacy is_superuser /
-// is_system_auditor flags used to gate, expressed as capability codenames so
-// enforcement no longer reads the flags (RBAC decoupling, step 3).
+// System capabilities are administrative authorities expressed as capability
+// codenames and enforced through the capability model.
 //
 // Unlike the polymorphic content-type capabilities (PermissionCatalog), a system
 // capability is only ever meaningful at GLOBAL scope: it is granted to the System
