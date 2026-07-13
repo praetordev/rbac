@@ -15,6 +15,13 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Release bump level (used when not triggered by a merged PR)"
+        required: true
+        type: choice
+        options: [patch, minor, major]
 
 # Serialize releases so two quick merges can't race on tag creation.
 concurrency:
@@ -26,7 +33,7 @@ permissions:
 
 jobs:
   release:
-    if: github.event.pull_request.merged == true
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,19 +56,26 @@ jobs:
       - name: Compute next version
         id: ver
         env:
+          EVENT: ${{ github.event_name }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          DISPATCH_BUMP: ${{ github.event.inputs.bump }}
         run: |
           set -euo pipefail
 
-          case "$HEAD_REF" in
-            debug/*)    bump=patch ;;
-            feature/*)  bump=minor ;;
-            breaking/*) bump=major ;;
-            *)
-              echo "Branch '$HEAD_REF' is not a release branch (debug/*, feature/*, breaking/*) — no release cut."
-              echo "release=false" >> "$GITHUB_OUTPUT"
-              exit 0 ;;
-          esac
+          # Bump level: from the dispatch input, else from the merged branch prefix.
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            bump="$DISPATCH_BUMP"
+          else
+            case "$HEAD_REF" in
+              debug/*)    bump=patch ;;
+              feature/*)  bump=minor ;;
+              breaking/*) bump=major ;;
+              *)
+                echo "Branch '$HEAD_REF' is not a release branch (debug/*, feature/*, breaking/*) — no release cut."
+                echo "release=false" >> "$GITHUB_OUTPUT"
+                exit 0 ;;
+            esac
+          fi
 
           latest=$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n1)
           latest=${latest:-v0.0.0}
@@ -74,11 +88,17 @@ jobs:
             major) major=$((major + 1)); minor=0; patch=0 ;;
           esac
 
-          # Go modules v2+ require the module path to carry a /vN suffix
-          # (go.mod + every importer). That can't be safely automated here.
+          # Go modules v2+ require the module path to carry a matching /vN suffix.
+          # We do not edit go.mod here; we verify the migration was already done in
+          # the PR that introduces the major, and fail loudly if it was not.
           if [ "$major" -ge 2 ]; then
-            echo "::error::Bump would produce v${major}.${minor}.${patch}, but Go requires the module path to become github.com/praetordev/rbac/v${major} for v2+. Do that migration in a PR and tag manually."
-            exit 1
+            modpath=$(awk '/^module /{print $2; exit}' go.mod)
+            case "$modpath" in
+              */v${major}) echo "module path ${modpath} matches v${major}" ;;
+              *)
+                echo "::error::Bump would produce v${major}.${minor}.${patch}, but go.mod module path is '${modpath}' — it must end with /v${major}. Bump the module path in a PR first."
+                exit 1 ;;
+            esac
           fi
 
           next="v${major}.${minor}.${patch}"
@@ -99,9 +119,17 @@ jobs:
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$NEXT" -m "$NEXT ($BUMP) — #$PR_NUM: $PR_TITLE"
+
+          # PR context is present for merge triggers, absent for manual dispatch.
+          if [ -n "${PR_NUM}" ]; then
+            src="#${PR_NUM}: ${PR_TITLE}"
+          else
+            src="manual dispatch"
+          fi
+
+          git tag -a "$NEXT" -m "$NEXT ($BUMP) — $src"
           git push origin "$NEXT"
           gh release create "$NEXT" \
             --target main \
             --title "$NEXT" \
-            --notes "**${BUMP}** release from #${PR_NUM}: ${PR_TITLE}"
+            --notes "**${BUMP}** release — ${src}"
