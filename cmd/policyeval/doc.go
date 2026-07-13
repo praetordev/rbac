@@ -141,13 +141,36 @@
 //
 // See the runnable [Example_enforcement].
 //
-// # Trust
+// # Trust — attribute provenance (read this)
 //
-// The engine trusts every [Grant] in Query.Grants EQUALLY and cannot detect a forged one;
-// their provenance is your responsibility. Resolve grants from a store keyed by a verified
-// identity — never from request-controlled input such as the request body, query string,
-// headers, or cookies. The full per-grant trust obligations accompany the trust-contract
-// documentation.
+// This is the load-bearing obligation. The engine trusts every [Grant] in Query.Grants
+// EQUALLY and CANNOT detect a forged one: a Grant carries a capability, a scope, and an
+// effect, but no origin — provenance is unrepresented by design. Two grants that differ only
+// in where they came from are identical to the evaluator, so it honors whatever the Query
+// holds. The defense lives entirely at YOUR boundary.
+//
+// Query.Grants IS the attribute bag. Because a policy can reference only the five closed
+// attribute names (need, scope, grant.cap, grant.scope, grant.effect), there is no separate
+// subject.* bag to protect — the grants are it. The value whose source you must guarantee is
+// Query.Grants, and the obligation is PER-GRANT, PER-FIELD: one forged Grant — or one genuine
+// grant with a forged Scope — compromises the decision.
+//
+// MUST — resolve grants from trust:
+//   - the subject's grants from a store only the app writes, looked up BY a verified identity;
+//   - the identity itself from a verified source (a validated session or signed assertion).
+//
+// MUST NOT — build grants from anything the caller controls:
+//   - the request body, query string, headers, or cookies;
+//   - any grant the client asserts about itself.
+//
+// The pitfall to guard against is LAUNDERING: unmarshalling client-supplied grants into
+// Query.Grants and passing them to Decide — the "grants from the request body" mistake. The
+// engine is not fooled; it does exactly its job; but the access is real because the INPUT was
+// forged. Query.Need and Query.Scope are typically request-derived — they describe WHAT is
+// asked, which is fine — but constrain them so a caller cannot pose a question that is not
+// theirs to ask. The load-bearing input remains Query.Grants.
+//
+// See the runnable [Example_attributeProvenance] for the incorrect-vs-correct contrast.
 //
 // # Examples
 //
@@ -155,4 +178,5 @@
 //   - [ExampleDecide] — the smallest correct call.
 //   - [Example_authoring] — the full condition vocabulary and deny-overrides in one bundle.
 //   - [Example_enforcement] — a PEP at the resource boundary, refusing on deny.
+//   - [Example_attributeProvenance] — forged vs trusted grants; the engine cannot tell.
 package main
