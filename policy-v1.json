@@ -1,0 +1,12 @@
+[
+  {
+    "name": "allow-read",
+    "effect": "allow",
+    "when": { "all": [
+      { "eq": [ { "attr": "need" }, { "lit": "read" } ] },
+      { "eq": [ { "attr": "grant.effect" }, { "lit": "allow" } ] },
+      { "eq": [ { "attr": "grant.cap" }, { "attr": "need" } ] },
+      { "eq": [ { "attr": "grant.scope" }, { "attr": "scope" } ] }
+    ] }
+  }
+]

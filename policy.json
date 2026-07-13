@@ -1,0 +1,52 @@
+[
+  {
+    "name": "wildcard-global",
+    "effect": "allow",
+    "when": { "all": [
+      { "eq": [ { "attr": "grant.effect" }, { "lit": "allow" } ] },
+      { "eq": [ { "attr": "grant.cap" }, { "lit": "*" } ] },
+      { "eq": [ { "attr": "grant.scope" }, { "lit": "" } ] }
+    ] }
+  },
+  {
+    "name": "exact-global",
+    "effect": "allow",
+    "when": { "all": [
+      { "eq": [ { "attr": "grant.effect" }, { "lit": "allow" } ] },
+      { "eq": [ { "attr": "grant.cap" }, { "attr": "need" } ] },
+      { "eq": [ { "attr": "grant.scope" }, { "lit": "" } ] }
+    ] }
+  },
+  {
+    "name": "wildcard-scoped",
+    "effect": "allow",
+    "when": { "all": [
+      { "ne": [ { "attr": "scope" }, { "lit": "" } ] },
+      { "eq": [ { "attr": "grant.effect" }, { "lit": "allow" } ] },
+      { "eq": [ { "attr": "grant.cap" }, { "lit": "*" } ] },
+      { "eq": [ { "attr": "grant.scope" }, { "attr": "scope" } ] }
+    ] }
+  },
+  {
+    "name": "exact-scoped",
+    "effect": "allow",
+    "when": { "all": [
+      { "ne": [ { "attr": "scope" }, { "lit": "" } ] },
+      { "eq": [ { "attr": "grant.effect" }, { "lit": "allow" } ] },
+      { "eq": [ { "attr": "grant.cap" }, { "attr": "need" } ] },
+      { "eq": [ { "attr": "grant.scope" }, { "attr": "scope" } ] }
+    ] }
+  },
+  {
+    "name": "explicit-deny",
+    "effect": "deny",
+    "when": { "all": [
+      { "eq": [ { "attr": "grant.effect" }, { "lit": "deny" } ] },
+      { "eq": [ { "attr": "grant.cap" }, { "attr": "need" } ] },
+      { "any": [
+        { "eq": [ { "attr": "grant.scope" }, { "lit": "" } ] },
+        { "eq": [ { "attr": "grant.scope" }, { "attr": "scope" } ] }
+      ] }
+    ] }
+  }
+]

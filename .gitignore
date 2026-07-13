@@ -1,0 +1,8 @@
+# Working scratch / task directives — kept local, out of the repo.
+# Everything under epic-rbac/ is notes-to-self: briefs, findings, and design
+# scratch used to direct the work. It is NOT the deliverable. The actual
+# deliverables live with the code (godoc, example tests, package docs).
+epic-rbac/
+
+# Compiled demo/binary artifacts.
+/policyeval
