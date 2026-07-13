@@ -1,16 +1,8 @@
-// Command policyeval explores RBAC evaluation by FOLDING a running decision over an
-// in-memory, ordered list of rules. It is deliberately GENERIC: it knows nothing about
-// organizations, ownership, tenants, or any named role. The only concepts are opaque
-// capability tokens and opaque scope ids — the engine treats them as strings and never
-// interprets them. The consumer's vocabulary lives entirely in the data, not here.
-//
-// Each rule's condition is a small CONDITION TREE with exactly four node types —
-// attr, literal, cmp, bool — instead of a hand-written Go predicate. A rule matches
-// when SOME grant the subject holds satisfies the tree, so the tree describes the shape
-// of a satisfying grant and the matcher supplies the existential over grants. The fold
-// itself is unchanged.
-//
-// Run:  go run ./cmd/policyeval
+// The package doc — the integrator-facing overview and decision surface — lives in doc.go.
+// Implementation note: each rule's condition is a small CONDITION TREE with exactly four
+// node types (attr, literal, cmp, bool) instead of a hand-written Go predicate. A rule
+// matches when SOME grant the subject holds satisfies the tree, so the tree describes the
+// shape of a satisfying grant and the matcher supplies the existential over grants.
 package main
 
 import (
