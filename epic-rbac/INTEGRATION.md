@@ -70,6 +70,41 @@ difference is the trustworthiness of the input, which is yours to guarantee.
 
 ---
 
+## ⚠️ Policy Source Integrity Contract
+
+> **A policy bundle MUST be verified as authentic before it becomes a snapshot. Load
+> untrusted bundles only through `Holder.LoadBundle` with a `Verifier` that establishes
+> trust (a signature you check, or a bundle fetched over an authenticated channel).**
+
+A swapped-in malicious snapshot is the strongest attack on the engine — it rewrites the
+policy itself. The engine cannot judge a policy's *provenance* any more than a grant's
+(it faithfully evaluates whatever snapshot is current), so integrity is your boundary.
+
+`LoadBundle(id, bundle, verify, combine)` enforces the ordering that makes this safe:
+
+1. **Verify first** — your `Verifier` runs on the raw bundle; unverified bytes are never
+   parsed or installed.
+2. **Parse under bounds** — a verified-but-malformed bundle still fails (Story 1 limits).
+3. **Swap atomically** — installation is a single atomic pointer store; no in-flight
+   decision ever observes a partial or malicious update.
+
+Any failure — no verifier, failed verification, or failed parse — is rejected and the
+**last known-good snapshot stays installed**. A bad bundle can never become current,
+clear the policy, or open access.
+
+```
+// You supply the trust anchor; the engine performs no crypto of its own.
+verify := func(bundle []byte) (policy []byte, err error) {
+    return checkSignature(bundle, trustedPublicKey) // your signature / channel check
+}
+if err := holder.LoadBundle(version, bundle, verify, denyOverrides); err != nil {
+    log.Warn("policy update rejected, still serving last known-good:", err)
+}
+```
+
+The engine ships only this seam — real signing/verification is yours to provide. Never
+bypass it by parsing an untrusted bundle directly into a snapshot.
+
 ## Absent, empty, and null attributes
 
 Policies reference attributes by name. Their behaviour when a value is missing,

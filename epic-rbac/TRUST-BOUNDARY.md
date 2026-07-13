@@ -71,7 +71,7 @@ independently: *if this defense were removed, where would the fix have to go?*
 | 8 | Forged attributes (e.g. fake grant/`subject.roles`) | Upstream | Engine test (prove-by-design) | **Attribute-resolution boundary** (Story 3); provenance unrepresented in `Grant` by design; `TestByDesign_ForgedGrantIndistinguishableFromReal` |
 | 9 | Injection-shaped attribute values (`admin'; permit all`, sigils) | By design | Engine test (prove-by-design) | Engine's opaque compare; `TestByDesign_InjectionShapedValuesAreOpaque` |
 | 10 | Attribute sourced from request-controlled input | Upstream | Documented contract | ✅ Attribute trust contract in `INTEGRATION.md`; behaviour pinned by `attribute_contract_test.go` |
-| 11 | Malicious/tampered policy bundle becomes a snapshot | Upstream | Mechanism + docs | Integrity-checked bundles before swap (Story 4) — ⏳ |
+| 11 | Malicious/tampered policy bundle becomes a snapshot | Upstream | Mechanism + docs | ✅ `Holder.LoadBundle` verifies (injected `Verifier`) before parse+atomic swap; fails closed to last known-good; `integrity_test.go` |
 | 12 | Full trace lets an end user probe the ruleset | By design | Engine feature | ✅ `Decision.Disclose(Full\|Minimal)`; minimal is a per-verdict constant, structure-free; `disclosure_test.go` |
 
 ### Reclassification log
@@ -128,7 +128,17 @@ opaque compare and the fix is engine code to restore it). Rows 10–11 are genui
   (`TestAbsentIsNonMatchEvenAgainstEmptyLiteral`, `TestAbsentOperatorAudit`). This
   changed the evaluator, so it was done pin-wrong-first → fix → prove-the-flip, not
   patched into the net.
-- **Story 4 — Policy source integrity (perimeter).** ⏳ Row 11.
+- **Story 4 — Policy source integrity (perimeter).** ✅ Done. Row 11. `LoadBundle`
+  is the load-path trust seam: it runs an injected `Verifier` on the raw bundle
+  BEFORE parsing or swapping, so unverified bytes never become a snapshot. Any
+  failure — nil verifier, failed verification, or failed parse — is rejected and the
+  last known-good snapshot stays installed; a bad bundle never opens or clears access.
+  The swap is the existing atomic pointer store, so no in-flight decision sees a
+  partial/malicious update (proven under `-race`). The engine performs no crypto
+  itself (per the non-goal); the consumer supplies the `Verifier` (tests use an
+  HMAC-SHA256 reference). `integrity_test.go`: verified installs, tampered/untrusted
+  rejected + last known-good preserved, nil-verifier refused, verified-but-malformed
+  rejected, concurrent atomicity.
 - **Story 5 — Trace disclosure levels (engine feature).** ✅ Done. Row 12.
   `Decision.Disclose(level)` renders at two levels: **Full** (the app's logs —
   complete rationale: matched/skipped rules, deciding rule, per-node results,
