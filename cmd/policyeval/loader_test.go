@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -143,6 +144,20 @@ func TestLoaderFirstRefreshFailureFailsClosed(t *testing.T) {
 	}
 	if l.Decide(writeReq()).Allow {
 		t.Error("no known-good must fail closed to DENY")
+	}
+}
+
+// The loader's own size-gate rejects an oversized in-memory Raw (defense-in-depth for a
+// source that does not bound its own read), before verify or parse, and it never becomes a
+// snapshot.
+func TestLoaderRawSizeGateRejectsOversized(t *testing.T) {
+	big := bytes.Repeat([]byte("x"), maxBundleBytes+1)
+	l := NewLoader(NewMemorySource(big), denyOverrides)
+	if err := l.Refresh(context.Background()); err == nil {
+		t.Fatal("the loader size-gate must reject an oversized bundle")
+	}
+	if l.Current() != nil {
+		t.Error("an oversized bundle must not become a snapshot")
 	}
 }
 

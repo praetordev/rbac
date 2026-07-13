@@ -66,6 +66,14 @@ func (l *Loader) Refresh(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("refresh: fetch failed, serving last known-good: %w", err)
 	}
+	// Size-gate FIRST, before verify/extract/parse: reject an oversized artifact so none of
+	// that work runs on it. Defense-in-depth — the reference FileSource already bounds its own
+	// read, but the seam's whole point is swappable sources, and a future HTTP/blob source may
+	// materialize Raw before we ever see it. (Its own hash still ran in Fetch; this gate stops
+	// everything downstream.)
+	if len(b.Raw) > maxBundleBytes {
+		return fmt.Errorf("refresh: bundle is %d bytes, exceeds maximum of %d, serving last known-good", len(b.Raw), maxBundleBytes)
+	}
 	if cur := l.holder.Current(); cur != nil && cur.ID() == b.Version {
 		return nil // unchanged version: parse-once-per-version — no re-verify, no re-parse, no swap
 	}

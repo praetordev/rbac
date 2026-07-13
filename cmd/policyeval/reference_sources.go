@@ -54,11 +54,19 @@ type FileSource struct {
 // NewFileSource builds a FileSource for path. The file is read on each Fetch, not now.
 func NewFileSource(path string) FileSource { return FileSource{path: path} }
 
-// Fetch reads the file and returns it as a content-versioned bundle, or an error.
+// Fetch reads the file (size-gated) and returns it as a content-versioned bundle, or an
+// error. The read is capped at maxBundleBytes: an oversized file is rejected after ~that many
+// bytes, never read whole, and never hashed — the size-gate runs BEFORE contentVersion.
 func (f FileSource) Fetch(context.Context) (Bundle, error) {
-	policy, err := os.ReadFile(f.path)
+	file, err := os.Open(f.path)
+	if err != nil {
+		return Bundle{}, fmt.Errorf("open policy file %q: %w", f.path, err)
+	}
+	defer file.Close()
+
+	raw, err := readCapped(file, maxBundleBytes)
 	if err != nil {
 		return Bundle{}, fmt.Errorf("read policy file %q: %w", f.path, err)
 	}
-	return Bundle{Raw: policy, Version: contentVersion(policy)}, nil
+	return Bundle{Raw: raw, Version: contentVersion(raw)}, nil
 }

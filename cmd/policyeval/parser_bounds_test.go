@@ -68,6 +68,17 @@ func TestParserRejectsTooManyRules(t *testing.T) {
 	}
 }
 
+func TestParserRejectsHugeAttrName(t *testing.T) {
+	big := strings.Repeat("a", maxLiteralLen+1)
+	_, err := parsePolicy([]byte(`[{"name":"r","effect":"allow","when":{"eq":[{"attr":"` + big + `"},{"lit":"x"}]}}]`))
+	if err == nil {
+		t.Fatal("an over-long attribute name must be rejected")
+	}
+	if !strings.Contains(err.Error(), "attr name") {
+		t.Errorf("expected an attr-name size error, got: %v", err)
+	}
+}
+
 func TestParserRejectsHugeLiteral(t *testing.T) {
 	big := strings.Repeat("a", maxLiteralLen+1)
 	_, err := parsePolicy([]byte(`[{"name":"r","effect":"allow","when":{"lit":"` + big + `"}}]`))

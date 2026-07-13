@@ -278,6 +278,13 @@ const (
 	maxDepth       = 64      // reject condition trees nested deeper than this
 	maxNodes       = 10000   // reject policies with more condition nodes than this (total)
 	maxLiteralLen  = 4096    // reject string literals longer than this
+
+	// maxBundleBytes caps the raw fetched artifact at INGEST — before it is hashed, verified,
+	// extracted, or parsed — so an oversized source cannot force a large allocation ahead of
+	// the parser's own len check. It equals maxPolicyBytes because the raw artifact currently
+	// IS the policy (Bundle.Raw); a signed-envelope source would raise it by the envelope
+	// overhead. See the loader.
+	maxBundleBytes = maxPolicyBytes
 )
 
 // parseBudget tracks resource consumption across a single policy parse so that width
@@ -374,6 +381,9 @@ func parseNode(raw json.RawMessage, depth int, budget *parseBudget) (*Node, erro
 			s, err := parseString(val)
 			if err != nil {
 				return nil, fmt.Errorf("attr: %w", err)
+			}
+			if len(s) > maxLiteralLen {
+				return nil, fmt.Errorf("attr name is %d bytes, exceeds maximum of %d", len(s), maxLiteralLen)
 			}
 			return attr(s), nil
 		case "lit":

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -102,5 +103,27 @@ func TestFileSource_MissingFileErrors(t *testing.T) {
 	_, err := NewFileSource(filepath.Join(t.TempDir(), "does-not-exist.json")).Fetch(context.Background())
 	if err == nil {
 		t.Error("fetching a missing file must return an error")
+	}
+}
+
+// A file exactly at the cap passes the size gate; one byte over is rejected — the truncation
+// trap closer (proves we do not silently accept a truncated policy).
+func TestFileSource_AtCapAcceptedOverCapRejected(t *testing.T) {
+	dir := t.TempDir()
+
+	atCap := filepath.Join(dir, "atcap")
+	if err := os.WriteFile(atCap, bytes.Repeat([]byte("x"), maxBundleBytes), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewFileSource(atCap).Fetch(context.Background()); err != nil {
+		t.Errorf("a file exactly at the cap must pass the size gate: %v", err)
+	}
+
+	overCap := filepath.Join(dir, "overcap")
+	if err := os.WriteFile(overCap, bytes.Repeat([]byte("x"), maxBundleBytes+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewFileSource(overCap).Fetch(context.Background()); err == nil {
+		t.Error("a file one byte over the cap must be rejected (no truncate-and-accept)")
 	}
 }

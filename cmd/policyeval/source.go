@@ -1,6 +1,10 @@
 package main
 
-import "context"
+import (
+	"context"
+	"fmt"
+	"io"
+)
 
 // ---- The fetch seam (source-agnostic loader, Story 1) --------------------------
 //
@@ -41,4 +45,21 @@ type Bundle struct {
 // ignore it.
 type Source interface {
 	Fetch(ctx context.Context) (Bundle, error)
+}
+
+// readCapped reads from r and returns its bytes, but REJECTS (does not truncate) if r holds
+// more than limit bytes. It reads at most limit+1 bytes: the one extra byte is enough to
+// detect "over the limit" without consuming — or trusting — the rest. This is the size-gate
+// sources use so a hostile artifact (a 10 GB file) is refused after ~limit bytes, never read
+// whole. Truncating would be worse than the DoS: a giant artifact would silently become a
+// valid-but-wrong short one.
+func readCapped(r io.Reader, limit int) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, int64(limit)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > limit {
+		return nil, fmt.Errorf("artifact exceeds maximum size of %d bytes", limit)
+	}
+	return data, nil
 }

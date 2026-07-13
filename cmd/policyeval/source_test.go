@@ -85,6 +85,30 @@ func TestSource_VersionRoundTripsOpaquely(t *testing.T) {
 	}
 }
 
+// countingReader yields an endless stream and records how many bytes were requested from it.
+type countingReader struct{ n int }
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 'x'
+	}
+	c.n += len(p)
+	return len(p), nil
+}
+
+// readCapped must reject an over-limit reader WITHOUT consuming the whole stream — it reads at
+// most limit+1 bytes. This exercises the READ path, not a post-read length check: an endless
+// reader would never terminate (or would OOM) if readCapped tried to read it whole.
+func TestReadCappedRejectsWithoutReadingWhole(t *testing.T) {
+	src := &countingReader{}
+	if _, err := readCapped(src, 1024); err == nil {
+		t.Fatal("an over-limit reader must be rejected")
+	}
+	if src.n > 1025 {
+		t.Errorf("readCapped consumed %d bytes; must stop at limit+1 (1025), not read the whole stream", src.n)
+	}
+}
+
 // A fetch error surfaces to the consumer (the loader will handle it as a refresh failure and
 // keep serving last known-good — Story 3).
 func TestSource_FetchErrorPropagates(t *testing.T) {
