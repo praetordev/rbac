@@ -69,10 +69,11 @@ func (l *Loader) Refresh(ctx context.Context) error {
 	if cur := l.holder.Current(); cur != nil && cur.ID() == b.Version {
 		return nil // unchanged version: parse-once-per-version — no re-verify, no re-parse, no swap
 	}
-	// New version: run the integrity step, then parse under the parser bounds and swap
-	// atomically. LoadBundle fails closed (keeping last known-good) on either a rejected
-	// bundle or a parse error — a bad refresh never opens access.
-	if err := l.holder.LoadBundle(b.Version, b.Policy, l.verify, l.combine); err != nil {
+	// New version: run the pipeline in its fixed order — Verify(Raw) → policy bytes → parse →
+	// atomic swap. LoadBundle verifies the raw artifact FIRST (producing the policy bytes),
+	// then parses under the parser bounds, failing closed (keeping last known-good) on either
+	// a rejected bundle or a parse error — a bad refresh never opens access.
+	if err := l.holder.LoadBundle(b.Version, b.Raw, l.verify, l.combine); err != nil {
 		return fmt.Errorf("refresh: load failed for version %q, serving last known-good: %w", b.Version, err)
 	}
 	return nil

@@ -24,7 +24,7 @@ func (s *alternatingSource) Fetch(context.Context) (Bundle, error) {
 	if s.n%2 == 0 {
 		p = s.b
 	}
-	return Bundle{Policy: p, Version: contentVersion(p)}, nil
+	return Bundle{Raw: p, Version: contentVersion(p)}, nil
 }
 
 // Parse-once-per-version: an unchanged version is not re-parsed (same snapshot pointer); a

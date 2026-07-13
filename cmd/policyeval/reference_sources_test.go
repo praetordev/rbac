@@ -21,7 +21,13 @@ func runPipeline(t *testing.T, src Source, h *Holder, combine Strategy) {
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
 	}
-	snap, err := NewSnapshot(b.Version, b.Policy, combine)
+	// Pinned order: Verify(Raw) -> policy bytes -> parse. Verification is the deferred no-op
+	// pass-through here; it consumes the raw artifact and produces the policy bytes.
+	policy, err := PassthroughVerifier(b.Raw)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	snap, err := NewSnapshot(b.Version, policy, combine)
 	if err != nil {
 		t.Fatalf("parse/snapshot: %v", err)
 	}

@@ -50,15 +50,15 @@ func pull(t *testing.T, src Source) Bundle {
 
 // The same consumer code drives two structurally different implementations unchanged.
 func TestSource_SwappableImplementations(t *testing.T) {
-	var src Source = staticSource{Bundle{Policy: []byte(`[]`), Version: "v-static"}}
-	if got := pull(t, src); got.Version != "v-static" || string(got.Policy) != `[]` {
+	var src Source = staticSource{Bundle{Raw: []byte(`[]`), Version: "v-static"}}
+	if got := pull(t, src); got.Version != "v-static" || string(got.Raw) != `[]` {
 		t.Errorf("static: got %+v", got)
 	}
 
 	// Swap the implementation — the consumer (pull) does not change.
 	src = &rotatingSource{bundles: []Bundle{
-		{Policy: []byte(`[1]`), Version: "v1"},
-		{Policy: []byte(`[2]`), Version: "v2"},
+		{Raw: []byte(`[1]`), Version: "v1"},
+		{Raw: []byte(`[2]`), Version: "v2"},
 	}}
 	if got := pull(t, src); got.Version != "v1" {
 		t.Errorf("rotating first fetch: got %q want v1", got.Version)
@@ -72,7 +72,7 @@ func TestSource_SwappableImplementations(t *testing.T) {
 // never normalized or interpreted.
 func TestSource_VersionRoundTripsOpaquely(t *testing.T) {
 	for _, v := range []string{"", "1.0", "sha:DEADBEEF", "\x00\x01weird"} {
-		src := staticSource{Bundle{Policy: []byte(`[]`), Version: v}}
+		src := staticSource{Bundle{Raw: []byte(`[]`), Version: v}}
 		if got := pull(t, src).Version; got != v {
 			t.Errorf("version mangled: got %q want %q", got, v)
 		}
@@ -93,7 +93,7 @@ func TestSource_FetchErrorPropagates(t *testing.T) {
 	if !errors.Is(err, sentinel) {
 		t.Errorf("fetch error not propagated: %v", err)
 	}
-	if b.Policy != nil || b.Version != "" {
+	if b.Raw != nil || b.Version != "" {
 		t.Errorf("a failed fetch must return the zero Bundle, got %+v", b)
 	}
 }

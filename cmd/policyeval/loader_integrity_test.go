@@ -84,6 +84,37 @@ func TestLoaderRejectedFirstRefreshFailsClosed(t *testing.T) {
 	}
 }
 
+// Verification sits BEFORE parse in the pipeline: the Verifier consumes the RAW fetched
+// artifact and PRODUCES the policy bytes, which are only then parsed. Proven with an envelope
+// verifier — a stand-in for the signed-envelope future — that strips a wrapper the parser
+// could not read. If the pipeline ever reordered to parse-before-verify (extracting from the
+// raw envelope after parsing), the parser would choke on the envelope and this test fails.
+func TestLoaderVerifyBeforeParse(t *testing.T) {
+	prefix := []byte("ENVELOPE:")
+	envelope := append(append([]byte(nil), prefix...), policyV2JSON...) // Raw = envelope(policy)
+
+	// Sanity: the raw envelope is NOT parseable, so a successful load can only mean verify ran
+	// first and produced the inner policy.
+	if _, err := parsePolicy(envelope); err == nil {
+		t.Fatal("test setup: the raw envelope must not parse directly")
+	}
+
+	unwrap := func(raw []byte) ([]byte, error) {
+		if !bytes.HasPrefix(raw, prefix) {
+			return nil, errors.New("not a valid envelope")
+		}
+		return bytes.TrimPrefix(raw, prefix), nil // consume Raw -> produce policy bytes
+	}
+
+	l := NewLoader(NewMemorySource(envelope), denyOverrides, WithVerifier(unwrap))
+	if err := l.Refresh(context.Background()); err != nil {
+		t.Fatalf("verify-before-parse must yield a parseable policy: %v", err)
+	}
+	if !l.Decide(writeReq()).Allow {
+		t.Error("the unwrapped v2 policy should serve (write ALLOW)")
+	}
+}
+
 // The integrity step runs once per NEW version (and is skipped, along with parse, for an
 // unchanged version — the already-verified bundle is not re-checked).
 func TestLoaderIntegrityRunsPerNewVersion(t *testing.T) {

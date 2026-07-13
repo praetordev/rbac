@@ -11,12 +11,17 @@ import "context"
 // this interface and NOWHERE else, so choosing the real source later is a drop-in, not a
 // rewrite. (The real source is deliberately not chosen here; see the epic non-goals.)
 
-// Bundle is a raw policy document as delivered by a Source, tagged with an opaque version
-// identifier. Its bytes are UNPARSED — a Bundle is what arrives before it is parsed into a
-// Snapshot.
+// Bundle is what a Source delivers: the raw fetched artifact plus an opaque version. Its
+// bytes are UNVERIFIED and UNPARSED — a Bundle is what arrives before the integrity step and
+// the parser have run.
 type Bundle struct {
-	// Policy is the raw, unparsed policy document — the same bytes parsePolicy consumes.
-	Policy []byte
+	// Raw is the raw fetched artifact — exactly what the Source produced, and exactly what a
+	// Verifier consumes. For the trivial reference sources it happens to be the policy bytes
+	// themselves; for a future signed source it would be a signed ENVELOPE (signature +
+	// payload), with the policy being what verification extracts from it. It is deliberately
+	// NOT named "policy": the policy is the OUTPUT of verification, not the raw input. The
+	// pipeline order is fixed: Fetch → Verify(Raw) → policy bytes → parse → snapshot.
+	Raw []byte
 
 	// Version is an opaque marker of this bundle's version: an etag, a commit sha, a content
 	// hash — whatever the Source uses. The loader treats it as an OPAQUE token, compared only

@@ -37,9 +37,10 @@ func NewMemorySource(policy []byte) MemorySource {
 	return MemorySource{policy: policy, version: contentVersion(policy)}
 }
 
-// Fetch returns the in-memory bundle. It never fails and ignores the context.
+// Fetch returns the in-memory bundle. It never fails and ignores the context. For this
+// trivial source the raw artifact IS the policy (no envelope), so Raw carries the policy bytes.
 func (m MemorySource) Fetch(context.Context) (Bundle, error) {
-	return Bundle{Policy: m.policy, Version: m.version}, nil
+	return Bundle{Raw: m.policy, Version: m.version}, nil
 }
 
 // FileSource serves the policy document at a path, re-read on each fetch and versioned by a
@@ -59,5 +60,5 @@ func (f FileSource) Fetch(context.Context) (Bundle, error) {
 	if err != nil {
 		return Bundle{}, fmt.Errorf("read policy file %q: %w", f.path, err)
 	}
-	return Bundle{Policy: policy, Version: contentVersion(policy)}, nil
+	return Bundle{Raw: policy, Version: contentVersion(policy)}, nil
 }
