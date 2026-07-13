@@ -88,6 +88,32 @@
 //	                             name is absent. If you expected to pass arbitrary context
 //	                             attributes, you cannot.
 //
+// # What the model cannot express (the genericness boundary)
+//
+// The engine is generic over VALUES and STRUCTURE — any opaque tokens, any condition-tree
+// shape — but its matching VOCABULARY is CLOSED: a capability-grant model, not open-attribute
+// ABAC. Its only comparison is string EQUALITY (eq / ne). Check this list BEFORE designing a
+// policy; if a rule needs any of the following, it cannot be expressed here:
+//
+//   - Ordering or ranges. There is no <, >, <=, >=. You cannot match "level at least 3", a
+//     price ceiling, or any threshold — values are compared only for exact equality.
+//   - Numbers or time. Values are opaque strings; "10" and "9" are unequal strings, never
+//     compared as numbers. No time-of-day window, no expiry-before-now, no counting or rates.
+//   - Patterns. No prefix, suffix, substring, glob, or regular expression — only exact match.
+//     Even "*" is NOT a wildcard: it is the literal string "*", matching only where a policy
+//     opts in with eq(grant.cap, "*"). See [Example_genericnessBoundary].
+//   - Arbitrary or context attributes. Only the five closed names resolve (need, scope,
+//     grant.cap, grant.scope, grant.effect). Request time, source address, resource owner,
+//     environment, or any subject.* attribute is ABSENT — a non-match, never a match.
+//   - Cross-grant conditions. A rule's condition is evaluated against ONE candidate grant at a
+//     time (the match is existential over Query.Grants), so a single rule cannot require the
+//     subject to hold two DIFFERENT grants at once.
+//
+// These limits are deliberate. Generalizing to an open-attribute (ABAC) model — arbitrary
+// attributes and relational operators — is a separate, parked fork, out of scope for this
+// engine. Design within the closed vocabulary, or choose a different tool; do not assume the
+// missing pieces are there.
+//
 // # Authoring a policy bundle
 //
 // A bundle is a JSON array of rules, parsed once by [NewSnapshot]. Each rule is:
@@ -200,4 +226,5 @@
 //   - [Example_authoring] — the full condition vocabulary and deny-overrides in one bundle.
 //   - [Example_enforcement] — a PEP at the resource boundary, refusing on deny.
 //   - [Example_attributeProvenance] — forged vs trusted grants; the engine cannot tell.
+//   - [Example_genericnessBoundary] — "*" is not a wildcard; the engine only compares equal.
 package main
