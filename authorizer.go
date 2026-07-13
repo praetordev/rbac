@@ -1,9 +1,6 @@
 package rbac
 
-import (
-	"context"
-	"fmt"
-)
+import "context"
 
 // This file defines the Policy Decision Point (PDP) contract for the capability
 // RBAC engine. The capability store implements Authorizer; callers depend on this
@@ -55,14 +52,4 @@ type Authorizer interface {
 	// list-filtering primitive. It unifies the global and scoped tiers so callers
 	// never branch on "sees everything".
 	VisibleIDs(ctx context.Context, sub Subject, action Action, t ContentType) ([]int64, error)
-}
-
-// checkCapabilityDefined enforces the Can contract: an (action, contentType) pair
-// outside the catalog is a programming error and must surface as an error, never a
-// silent allow or deny.
-func checkCapabilityDefined(ct ContentType, action Action) error {
-	if IsValidCapability(ct, action) {
-		return nil
-	}
-	return fmt.Errorf("capability %q is not defined for content type %q", action, ct)
 }
