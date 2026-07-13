@@ -172,6 +172,27 @@
 //
 // See the runnable [Example_attributeProvenance] for the incorrect-vs-correct contrast.
 //
+// # The attribute source seam (yours to build)
+//
+// The engine deliberately ships NO attribute resolver — nothing that turns a principal into
+// its grants. That step is app-specific by nature (your identity system, your grant store),
+// so shipping one would be guessing, and a wrong default here is a security bug. The seam is
+// left open ON PURPOSE; what is specified is the CONTRACT it must satisfy, not an
+// implementation.
+//
+// Your resolver sits between a verified identity and the Query. Conceptually:
+//
+//	resolve(verifiedIdentity) -> []Grant   // from a store only the app writes
+//
+// It MUST satisfy the provenance obligations above: the identity comes from a verified
+// source, the grants from a store the caller cannot influence, and nothing on the request
+// path may add to or edit the result. The engine consumes whatever []Grant you supply as
+// Query.Grants and asks no questions about where it came from — which is exactly why the
+// contract is yours, not the engine's.
+//
+// There is no reference resolver to copy, by design. [Example_enforcement] and
+// [Example_attributeProvenance] show the consuming side: a trusted lookup keyed by identity.
+//
 // # Examples
 //
 // Runnable, verified end to end:
