@@ -52,17 +52,21 @@ func TestByDesign_PermitAlwaysPolicyEvaluatedFaithfully(t *testing.T) {
 	}
 }
 
-// Threat 8 — the engine cannot distinguish a FORGED grant from a legitimately-issued one. It
-// evaluates whatever the query carries. A fabricated allow grant yields ALLOW just as a real
-// one would. The defense is the attribute/grant-resolution trust boundary (Story 3): the
-// consumer must source grants from trusted origins. The engine, by design, sees only values.
+// Threat 8 — forged-vs-authentic is a distinction the engine CANNOT make, and that is a
+// design fact, not an omission: Grant has no provenance field, so two grants differing only
+// in origin are unconstructible. The engine evaluates whatever the query carries; a
+// fabricated allow grant is byte-for-byte an ordinary grant and is honored as one. Because
+// origin is unrepresented, the threat is closed UPSTREAM at the attribute/grant-resolution
+// trust boundary (Story 3) — consumers must source grants from trusted origins — never in
+// the evaluator.
 func TestByDesign_ForgedGrantIndistinguishableFromReal(t *testing.T) {
 	rules := mustPolicy(t, exactAllowPolicy)
 
 	// A grant the subject legitimately holds.
 	legit := Query{Grants: []Grant{{"read", "obj1", Allow}}, Need: "read", Scope: "obj1"}
-	// A grant an attacker fabricated for a capability they were never issued. Byte-for-byte
-	// it is a normal grant; only its ORIGIN differs, and origin is invisible to the engine.
+	// A grant an attacker fabricated for a capability they were never issued. There is no
+	// "authentic" counterpart to contrast it with: origin is unrepresented, so the engine
+	// sees an ordinary grant and honors it.
 	forged := Query{Grants: []Grant{{"delete", "obj1", Allow}}, Need: "delete", Scope: "obj1"}
 
 	if !evaluate(rules, legit, denyOverrides).Allow {
