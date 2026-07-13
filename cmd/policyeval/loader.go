@@ -26,13 +26,33 @@ type Loader struct {
 	src     Source
 	combine Strategy
 	holder  *Holder
+	verify  Verifier   // integrity step; defaults to PassthroughVerifier (deferred no-op)
 	mu      sync.Mutex // serializes Refresh so version-skip is consistent; Decide stays lock-free
 }
 
-// NewLoader builds a Loader over src. Until the first successful Refresh it holds no snapshot,
-// so decisions fail closed (deny).
-func NewLoader(src Source, combine Strategy) *Loader {
-	return &Loader{src: src, combine: combine, holder: NewHolder(nil)}
+// LoaderOption configures a Loader at construction.
+type LoaderOption func(*Loader)
+
+// WithVerifier injects a real integrity check in place of the deferred pass-through. This is
+// the whole drop-in point: choosing a real check later changes NOTHING in the loader core —
+// only the Verifier passed here. A nil verifier is ignored (the pass-through default stays).
+func WithVerifier(v Verifier) LoaderOption {
+	return func(l *Loader) {
+		if v != nil {
+			l.verify = v
+		}
+	}
+}
+
+// NewLoader builds a Loader over src. Its integrity step defaults to PassthroughVerifier (a
+// marked no-op, deferred pending a source choice); pass WithVerifier to supply a real check.
+// Until the first successful Refresh it holds no snapshot, so decisions fail closed (deny).
+func NewLoader(src Source, combine Strategy, opts ...LoaderOption) *Loader {
+	l := &Loader{src: src, combine: combine, holder: NewHolder(nil), verify: PassthroughVerifier}
+	for _, o := range opts {
+		o(l)
+	}
+	return l
 }
 
 // Refresh fetches the current bundle and, if it is a new version, parses it and atomically
@@ -47,12 +67,13 @@ func (l *Loader) Refresh(ctx context.Context) error {
 		return fmt.Errorf("refresh: fetch failed, serving last known-good: %w", err)
 	}
 	if cur := l.holder.Current(); cur != nil && cur.ID() == b.Version {
-		return nil // unchanged version: parse-once-per-version — no re-parse, no swap
+		return nil // unchanged version: parse-once-per-version — no re-verify, no re-parse, no swap
 	}
-	// New version: Holder.Load parses under the parser bounds and swaps atomically, itself
-	// failing closed (keeping last known-good) on a parse error.
-	if err := l.holder.Load(b.Version, b.Policy, l.combine); err != nil {
-		return fmt.Errorf("refresh: parse failed for version %q, serving last known-good: %w", b.Version, err)
+	// New version: run the integrity step, then parse under the parser bounds and swap
+	// atomically. LoadBundle fails closed (keeping last known-good) on either a rejected
+	// bundle or a parse error — a bad refresh never opens access.
+	if err := l.holder.LoadBundle(b.Version, b.Policy, l.verify, l.combine); err != nil {
+		return fmt.Errorf("refresh: load failed for version %q, serving last known-good: %w", b.Version, err)
 	}
 	return nil
 }
@@ -95,4 +116,12 @@ func demoLoader() {
 	err := bad.Refresh(ctx)
 	fmt.Printf("\nunreachable source -> refresh error: %v\n", err)
 	fmt.Printf("  serving version %q; write @ obj1 -> %s (fail closed, last known-good)\n", bad.Version(), verdictWord(bad.Decide(req)))
+
+	// The integrity step is present and fails closed. Default is a no-op pass-through; a real
+	// check drops in via WithVerifier — here a stand-in that rejects everything.
+	reject := func([]byte) ([]byte, error) { return nil, fmt.Errorf("untrusted bundle (demo)") }
+	li := NewLoader(NewMemorySource(policyV2JSON), denyOverrides, WithVerifier(reject))
+	err = li.Refresh(ctx)
+	fmt.Printf("\nrejecting integrity check -> refresh error: %v\n", err)
+	fmt.Printf("  serving version %q; write @ obj1 -> %s (fail closed)\n", li.Version(), verdictWord(li.Decide(req)))
 }

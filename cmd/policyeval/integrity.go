@@ -17,6 +17,17 @@ import "fmt"
 // enforces that it runs before a swap and that a failed check never opens access.
 type Verifier func(bundle []byte) (policy []byte, err error)
 
+// PassthroughVerifier is the loader's DEFAULT, DEFERRED integrity step: it accepts every
+// bundle unchanged. It is a NO-OP placeholder, NOT a real authenticity check.
+//
+// Real integrity depends on the policy source — you sign a git repo differently than an HTTP
+// endpoint than a local file — so implementing it now would be guessing (see the epic
+// non-goals and TRUST-BOUNDARY.md row 11). This is the ONE obvious, documented place a real
+// check drops in: pass a real Verifier to the loader (NewLoader(..., WithVerifier(real))) and
+// nothing else changes. Until then, the loader's integrity step is present and wired to fail
+// closed — it simply passes everything.
+func PassthroughVerifier(bundle []byte) ([]byte, error) { return bundle, nil }
+
 // LoadBundle verifies bundle with v and installs it ONLY if verification AND parsing both
 // succeed. Ordering is the guarantee:
 //  1. Verify integrity/authenticity first — unverified bytes are never parsed or installed.
