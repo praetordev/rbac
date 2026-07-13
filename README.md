@@ -10,7 +10,7 @@ tree, parsed once into an immutable, versioned snapshot, and evaluated with a fo
 ordered rule list.
 
 ```
-import "github.com/praetordev/rbac/v3"
+import "github.com/praetordev/rbac/v4"
 ```
 
 ## Quickstart
@@ -23,7 +23,7 @@ package main
 import (
     "fmt"
 
-    rbac "github.com/praetordev/rbac/v3"
+    rbac "github.com/praetordev/rbac/v4"
 )
 
 func main() {
@@ -120,7 +120,7 @@ The full integrator contract is the package documentation plus nine runnable, ve
 examples:
 
 ```sh
-go doc github.com/praetordev/rbac/v3      # the complete usage + trust contract
+go doc github.com/praetordev/rbac/v4      # the complete usage + trust contract
 go test -run Example -v .                  # nine end-to-end examples
 ```
 
@@ -149,5 +149,5 @@ Merging any other prefix cuts no release. A release can also be cut on demand vi
 `release` workflow's manual dispatch (`bump=patch|minor|major`).
 
 Majors (v2+) require the module path to carry a `/vN` suffix
-(`github.com/praetordev/rbac/v3`); land that module-path change in the same major PR, and the
+(`github.com/praetordev/rbac/v4`); land that module-path change in the same major PR, and the
 release workflow verifies it before tagging.
