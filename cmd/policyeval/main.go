@@ -620,6 +620,7 @@ func main() {
 
 	demoSnapshots()
 	demoDisclosure()
+	demoLoader()
 }
 
 func describe(q Query) string {
