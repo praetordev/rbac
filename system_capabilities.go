@@ -64,6 +64,39 @@ func SystemPermissionCatalog() []DABPermission {
 	return out
 }
 
+// systemCodenameSet indexes systemPermissions by codename for O(1) membership tests.
+var systemCodenameSet = func() map[string]struct{} {
+	m := make(map[string]struct{}, len(systemPermissions))
+	for _, p := range systemPermissions {
+		m[p.codename] = struct{}{}
+	}
+	return m
+}()
+
+// IsSystemCapability reports whether codename names a global-scope-only system capability
+// (manage_user, view_activitystream, …). Such a capability is meaningful only at GLOBAL
+// scope, so a custom RoleDefinition that bundles one at object/team scope is a
+// privilege-escalation bug the caller must reject. Content-type capabilities and unknown
+// codenames return false.
+func IsSystemCapability(codename string) bool {
+	_, ok := systemCodenameSet[codename]
+	return ok
+}
+
+// SystemCapabilitiesIn returns the system capabilities present in codenames — the ones a
+// non-global (object/team-scoped) role must not confer. A caller validating a custom,
+// object-scoped RoleDefinition should reject the definition when this is non-empty. The
+// result follows input order and preserves duplicates; it is nil when there are none.
+func SystemCapabilitiesIn(codenames []string) []string {
+	var out []string
+	for _, c := range codenames {
+		if IsSystemCapability(c) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // systemAdminCodenames returns every system capability — the set granted to the
 // System Administrator managed role.
 func systemAdminCodenames() []string {
