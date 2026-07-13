@@ -1,4 +1,4 @@
-package rbac
+package postgres
 
 import (
 	"context"
@@ -9,28 +9,27 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
+
+	rbac "github.com/praetordev/rbac/v3"
 )
 
-// Integration tests for the CapabilityStore PDP. They require a real Postgres
-// (the store speaks Postgres-specific SQL — partial indexes, ON CONFLICT), so
-// they are gated on RBAC_TEST_DATABASE_URL and skip when it is unset.
+// Integration tests for the Store PDP. They require a real Postgres (the store speaks
+// Postgres-specific SQL — partial indexes, ON CONFLICT), so they are gated on
+// RBAC_TEST_DATABASE_URL and skip when it is unset.
 //
 //   RBAC_TEST_DATABASE_URL='postgres://user:pass@localhost:5432/rbac_test?sslmode=disable' go test ./...
 //
-// Each test provisions its own fixture in a throwaway state (dropObjects + testSchema),
-// so the target database may be any scratch database — the tests own their tables.
-//
-// Scope: these exercise the query-time decision path (HasCapability / HasGlobalCapability /
-// VisibleIDs) and the assignment write path (Give*/Revoke*). The fixture's
-// rebuild_object_role_evaluations is a NO-OP STUB — the real one (org->child propagation)
-// lives in the consumer's migrations and is that repo's to test. Scoped read tests
-// therefore materialise role_evaluations rows directly, which is exactly what lets the
-// revoke test prove the safety property without depending on propagation.
+// They exercise the query-time decision path (HasCapability / HasGlobalCapability /
+// VisibleIDs) and the assignment write path (Give*/Revoke*) against a domain-neutral
+// sample vocabulary. The fixture's rebuild_object_role_evaluations is a NO-OP STUB — the
+// real one (hierarchy propagation) is the consumer's to provide and test — so scoped read
+// tests materialise role_evaluations rows directly, which is what lets the revoke test
+// prove the safety property without depending on propagation.
 
-// testSchema is a minimal but faithful subset of the consumer's capability schema
-// (praetor migration 000056), carrying the columns, the CHECK, and — critically — the
-// two partial unique indexes the store's ON CONFLICT relies on. Parent-table foreign
-// keys (users/teams) are intentionally dropped so the fixture stands alone.
+// testSchema is a minimal but faithful subset of a consumer's capability schema: the
+// columns, the CHECK, and the two partial unique indexes the store's ON CONFLICT relies
+// on. `widgets` stands in for a consumer resource table (AllIDsOfType); team_members is
+// the injected membership table.
 const testSchema = `
 CREATE TABLE role_definitions (
     id BIGSERIAL PRIMARY KEY,
@@ -88,25 +87,22 @@ CREATE TABLE team_members (
     user_id BIGINT NOT NULL,
     PRIMARY KEY (team_id, user_id)
 );
-CREATE TABLE inventories (id BIGINT PRIMARY KEY);
--- Test stub only: the real function does org->child propagation and lives in the
--- consumer's migrations. Here it is a no-op so Give*/Revoke* run end to end.
+CREATE TABLE widgets (id BIGINT PRIMARY KEY);
+-- Test stub only: the real function does hierarchy propagation and is the consumer's.
 CREATE FUNCTION rebuild_object_role_evaluations(p_or_id BIGINT) RETURNS VOID AS $$ BEGIN RETURN; END; $$ LANGUAGE plpgsql;
 `
 
 const dropObjects = `
 DROP FUNCTION IF EXISTS rebuild_object_role_evaluations(BIGINT);
-DROP TABLE IF EXISTS inventories, team_members, role_evaluations, role_team_assignments,
+DROP TABLE IF EXISTS widgets, team_members, role_evaluations, role_team_assignments,
     role_user_assignments, object_roles, role_definition_permissions, dab_permissions,
     role_definitions CASCADE;
 `
 
-// testInventoryTables is the content-type->table map for AllIDsOfType in tests.
-var testInventoryTables = map[ContentType]string{ContentTypeInventory: "inventories"}
-
-// newTestStore connects to RBAC_TEST_DATABASE_URL (skipping if unset), reprovisions
-// the fixture from scratch, and returns a store plus the raw handle for seeding.
-func newTestStore(t *testing.T) (*CapabilityStore, *sqlx.DB) {
+// newTestStore connects to RBAC_TEST_DATABASE_URL (skipping if unset), reprovisions the
+// fixture from scratch, and returns a store (wired to the sample catalog and the widgets
+// table) plus the raw handle for seeding.
+func newTestStore(t *testing.T) (*Store, *sqlx.DB) {
 	t.Helper()
 	dsn := os.Getenv("RBAC_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -123,7 +119,16 @@ func newTestStore(t *testing.T) (*CapabilityStore, *sqlx.DB) {
 	if _, err := db.Exec(testSchema); err != nil {
 		t.Fatalf("create fixture: %v", err)
 	}
-	return NewCapabilityStore(db, testInventoryTables), db
+	store, err := NewStore(Config{
+		DB:               db,
+		Catalog:          testCatalog(),
+		Tables:           map[rbac.ContentType]string{"widget": "widgets"},
+		TeamMembersTable: "team_members",
+	})
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	return store, db
 }
 
 // --- seed helpers ---------------------------------------------------------------
@@ -141,6 +146,13 @@ func mustExec(t *testing.T, db *sqlx.DB, query string, args ...any) {
 	t.Helper()
 	if _, err := db.Exec(query, args...); err != nil {
 		t.Fatalf("seed %q: %v", query, err)
+	}
+}
+
+func mustGet(t *testing.T, db *sqlx.DB, dest any, query string, args ...any) {
+	t.Helper()
+	if err := db.Get(dest, query, args...); err != nil {
+		t.Fatalf("query %q: %v", query, err)
 	}
 }
 
@@ -176,31 +188,31 @@ func TestHasCapability_TwoTier(t *testing.T) {
 	ctx := context.Background()
 	s, db := newTestStore(t)
 
-	// Global tier: System Administrator holds manage_organization everywhere.
-	gDef := seedDefWithPerm(t, db, "System Administrator", nil, "manage_organization", "organization", "manage")
+	// Global tier: a system role holds manage_gadget everywhere.
+	gDef := seedDefWithPerm(t, db, "Gadget Superadmin", nil, "manage_gadget", "gadget", "manage")
 	gOR := seedObjectRole(t, db, gDef, nil, nil)
 	mustExec(t, db, `INSERT INTO role_user_assignments (role_definition_id, user_id, object_role_id) VALUES ($1, $2, $3)`, gDef, 1, gOR)
 
-	// Scoped tier: Inventory Admin on inventory 42 only.
-	sDef := seedDefWithPerm(t, db, "Inventory Admin", str("inventory"), "change_inventory", "inventory", "change")
-	sOR := seedObjectRole(t, db, sDef, str("inventory"), i64(42))
-	mustExec(t, db, `INSERT INTO role_evaluations (object_role_id, content_type, object_id, codename) VALUES ($1, 'inventory', 42, 'change_inventory')`, sOR)
+	// Scoped tier: Widget Admin on widget 42 only.
+	sDef := seedDefWithPerm(t, db, "Widget Admin", str("widget"), "change_widget", "widget", "change")
+	sOR := seedObjectRole(t, db, sDef, str("widget"), i64(42))
+	mustExec(t, db, `INSERT INTO role_evaluations (object_role_id, content_type, object_id, codename) VALUES ($1, 'widget', 42, 'change_widget')`, sOR)
 	mustExec(t, db, `INSERT INTO role_user_assignments (role_definition_id, user_id, object_role_id) VALUES ($1, $2, $3)`, sDef, 2, sOR)
 
 	cases := []struct {
 		name   string
 		user   int64
-		ct     ContentType
+		ct     rbac.ContentType
 		obj    int64
 		code   string
 		expect bool
 	}{
-		{"global holder sees any org", 1, ContentTypeOrganization, 7, "manage_organization", true},
-		{"global holder sees another org", 1, ContentTypeOrganization, 99, "manage_organization", true},
-		{"non-holder denied global", 2, ContentTypeOrganization, 7, "manage_organization", false},
-		{"scoped holder on granted object", 2, ContentTypeInventory, 42, "change_inventory", true},
-		{"scoped holder on other object", 2, ContentTypeInventory, 43, "change_inventory", false},
-		{"non-holder denied scoped", 1, ContentTypeInventory, 42, "change_inventory", false},
+		{"global holder sees any gadget", 1, "gadget", 7, "manage_gadget", true},
+		{"global holder sees another gadget", 1, "gadget", 99, "manage_gadget", true},
+		{"non-holder denied global", 2, "gadget", 7, "manage_gadget", false},
+		{"scoped holder on granted object", 2, "widget", 42, "change_widget", true},
+		{"scoped holder on other object", 2, "widget", 43, "change_widget", false},
+		{"non-holder denied scoped", 1, "widget", 42, "change_widget", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -215,20 +227,20 @@ func TestHasCapability_TwoTier(t *testing.T) {
 	}
 }
 
-// TestRevokeTakesEffectImmediately is the headline safety property (Fable concern #1):
-// role_evaluations rows are keyed by object_role and actorHolds joins assignments live, so
-// deleting the assignment denies access on the very next check — with NO cache rebuild.
-// A regression that cached membership into role_evaluations would fail this test.
+// TestRevokeTakesEffectImmediately is the headline safety property: role_evaluations rows
+// are keyed by object_role and actorHolds joins assignments live, so deleting the
+// assignment denies access on the very next check — with NO cache rebuild. A regression
+// that cached membership into role_evaluations would fail this test.
 func TestRevokeTakesEffectImmediately(t *testing.T) {
 	ctx := context.Background()
 	s, db := newTestStore(t)
 
-	defID := seedDefWithPerm(t, db, "Inventory Admin", str("inventory"), "change_inventory", "inventory", "change")
-	orID := seedObjectRole(t, db, defID, str("inventory"), i64(42))
-	mustExec(t, db, `INSERT INTO role_evaluations (object_role_id, content_type, object_id, codename) VALUES ($1, 'inventory', 42, 'change_inventory')`, orID)
+	defID := seedDefWithPerm(t, db, "Widget Admin", str("widget"), "change_widget", "widget", "change")
+	orID := seedObjectRole(t, db, defID, str("widget"), i64(42))
+	mustExec(t, db, `INSERT INTO role_evaluations (object_role_id, content_type, object_id, codename) VALUES ($1, 'widget', 42, 'change_widget')`, orID)
 	mustExec(t, db, `INSERT INTO role_user_assignments (role_definition_id, user_id, object_role_id) VALUES ($1, $2, $3)`, defID, 7, orID)
 
-	before, err := s.HasCapability(ctx, 7, ContentTypeInventory, 42, "change_inventory")
+	before, err := s.HasCapability(ctx, 7, "widget", 42, "change_widget")
 	if err != nil {
 		t.Fatalf("HasCapability before: %v", err)
 	}
@@ -236,12 +248,10 @@ func TestRevokeTakesEffectImmediately(t *testing.T) {
 		t.Fatal("expected access before revoke")
 	}
 
-	if err := s.RevokeUserPermission(ctx, defID, "inventory", 42, 7); err != nil {
+	if err := s.RevokeUserPermission(ctx, defID, "widget", 42, 7); err != nil {
 		t.Fatalf("RevokeUserPermission: %v", err)
 	}
 
-	// The evaluation row must still exist — revoke deletes only the assignment, never
-	// rebuilds. This is the invariant that makes omitting the rebuild safe.
 	var evalRows int
 	if err := db.Get(&evalRows, `SELECT count(*) FROM role_evaluations WHERE object_role_id = $1`, orID); err != nil {
 		t.Fatalf("count evals: %v", err)
@@ -250,7 +260,7 @@ func TestRevokeTakesEffectImmediately(t *testing.T) {
 		t.Fatalf("expected evaluation row to persist through revoke, got %d rows", evalRows)
 	}
 
-	after, err := s.HasCapability(ctx, 7, ContentTypeInventory, 42, "change_inventory")
+	after, err := s.HasCapability(ctx, 7, "widget", 42, "change_widget")
 	if err != nil {
 		t.Fatalf("HasCapability after: %v", err)
 	}
@@ -259,26 +269,24 @@ func TestRevokeTakesEffectImmediately(t *testing.T) {
 	}
 }
 
-// TestGiveUserPermission_Idempotent exercises getOrCreateObjectRole (issue #122): repeated
-// grants must reuse the one object_role (scoped and global), not duplicate it, and a second
-// user on the same scope shares it.
+// TestGiveUserPermission_Idempotent exercises getOrCreateObjectRole: repeated grants reuse
+// the one object_role (scoped and global), and a second user on the same scope shares it.
 func TestGiveUserPermission_Idempotent(t *testing.T) {
 	ctx := context.Background()
 	s, db := newTestStore(t)
 
-	// Scoped: two grants for user 1, one for user 2, all on (inventory, 42).
-	sDef := seedDefWithPerm(t, db, "Inventory Admin", str("inventory"), "change_inventory", "inventory", "change")
+	sDef := seedDefWithPerm(t, db, "Widget Admin", str("widget"), "change_widget", "widget", "change")
 	for i := 0; i < 2; i++ {
-		if err := s.GiveUserPermission(ctx, sDef, str("inventory"), i64(42), 1); err != nil {
+		if err := s.GiveUserPermission(ctx, sDef, str("widget"), i64(42), 1); err != nil {
 			t.Fatalf("GiveUserPermission user1 #%d: %v", i, err)
 		}
 	}
-	if err := s.GiveUserPermission(ctx, sDef, str("inventory"), i64(42), 2); err != nil {
+	if err := s.GiveUserPermission(ctx, sDef, str("widget"), i64(42), 2); err != nil {
 		t.Fatalf("GiveUserPermission user2: %v", err)
 	}
 
 	var scopedORs int
-	mustGet(t, db, &scopedORs, `SELECT count(*) FROM object_roles WHERE role_definition_id = $1 AND content_type = 'inventory' AND object_id = 42`, sDef)
+	mustGet(t, db, &scopedORs, `SELECT count(*) FROM object_roles WHERE role_definition_id = $1 AND content_type = 'widget' AND object_id = 42`, sDef)
 	if scopedORs != 1 {
 		t.Fatalf("expected exactly 1 scoped object_role, got %d", scopedORs)
 	}
@@ -288,8 +296,7 @@ func TestGiveUserPermission_Idempotent(t *testing.T) {
 		t.Fatalf("expected 2 assignments, got %d", assignments)
 	}
 
-	// Global: two grants must dedupe to one NULL-scoped object_role via the partial index.
-	gDef := seedDefWithPerm(t, db, "System Administrator", nil, "manage_organization", "organization", "manage")
+	gDef := seedDefWithPerm(t, db, "Gadget Superadmin", nil, "manage_gadget", "gadget", "manage")
 	for i := 0; i < 2; i++ {
 		if err := s.GiveUserPermission(ctx, gDef, nil, nil, 1); err != nil {
 			t.Fatalf("GiveUserPermission global #%d: %v", i, err)
@@ -302,16 +309,12 @@ func TestGiveUserPermission_Idempotent(t *testing.T) {
 	}
 }
 
-// TestGiveUserPermission_ConcurrentSameScope is the TOCTOU proof for issue #122: many
-// goroutines grant the same (definition, object) scope at once with no pre-existing
-// object_role, so they race inside getOrCreateObjectRole. The ON CONFLICT DO NOTHING +
-// re-SELECT must converge them onto exactly one object_role with no errors. Before the
-// fix (plain SELECT-then-INSERT) this would either duplicate the object_role or fail one
-// grant on the unique-index violation.
+// TestGiveUserPermission_ConcurrentSameScope stresses the assignment path: many goroutines
+// grant the same scope at once and must converge on one object_role with no errors.
 func TestGiveUserPermission_ConcurrentSameScope(t *testing.T) {
 	ctx := context.Background()
 	s, db := newTestStore(t)
-	defID := seedDefWithPerm(t, db, "Inventory Admin", str("inventory"), "change_inventory", "inventory", "change")
+	defID := seedDefWithPerm(t, db, "Widget Admin", str("widget"), "change_widget", "widget", "change")
 
 	const n = 12
 	errs := make(chan error, n)
@@ -321,8 +324,8 @@ func TestGiveUserPermission_ConcurrentSameScope(t *testing.T) {
 		wg.Add(1)
 		go func(userID int64) {
 			defer wg.Done()
-			<-start // release all goroutines together to maximise contention
-			errs <- s.GiveUserPermission(ctx, defID, str("inventory"), i64(42), userID)
+			<-start
+			errs <- s.GiveUserPermission(ctx, defID, str("widget"), i64(42), userID)
 		}(int64(u + 1))
 	}
 	close(start)
@@ -335,7 +338,7 @@ func TestGiveUserPermission_ConcurrentSameScope(t *testing.T) {
 	}
 
 	var objectRoles int
-	mustGet(t, db, &objectRoles, `SELECT count(*) FROM object_roles WHERE role_definition_id = $1 AND content_type = 'inventory' AND object_id = 42`, defID)
+	mustGet(t, db, &objectRoles, `SELECT count(*) FROM object_roles WHERE role_definition_id = $1 AND content_type = 'widget' AND object_id = 42`, defID)
 	if objectRoles != 1 {
 		t.Fatalf("expected exactly 1 object_role after %d concurrent grants, got %d", n, objectRoles)
 	}
@@ -347,30 +350,25 @@ func TestGiveUserPermission_ConcurrentSameScope(t *testing.T) {
 }
 
 // TestGetOrCreateObjectRole_LoserReSelects deterministically drives the ON CONFLICT +
-// re-SELECT branch of the fix (issue #122), which the probabilistic stress test above
-// cannot reliably reach. Two transactions race for the same scope: the winner (tx1)
-// inserts but holds its transaction open; the loser (tx2) misses on its SELECT and blocks
-// on the unique-index entry inside its INSERT. Only once tx2 is provably blocked do we
-// commit tx1 — forcing tx2's ON CONFLICT DO NOTHING to return no rows and fall through to
-// the re-SELECT, which must return the winner's id with no error. Against the pre-fix
-// plain INSERT, tx2 would instead raise a unique_violation.
+// re-SELECT branch: two transactions race for the same scope; the winner holds its tx
+// open while the loser blocks inside its INSERT, then commits — forcing the loser's
+// ON CONFLICT DO NOTHING to return no rows and fall through to the re-SELECT. Against a
+// plain INSERT the loser would instead raise a unique_violation.
 func TestGetOrCreateObjectRole_LoserReSelects(t *testing.T) {
 	ctx := context.Background()
 	_, db := newTestStore(t)
-	defID := seedDefWithPerm(t, db, "Inventory Admin", str("inventory"), "change_inventory", "inventory", "change")
+	defID := seedDefWithPerm(t, db, "Widget Admin", str("widget"), "change_widget", "widget", "change")
 
-	// Winner: create the object_role in tx1 but do not commit yet.
 	tx1, err := db.BeginTxx(ctx, nil)
 	if err != nil {
 		t.Fatalf("begin tx1: %v", err)
 	}
-	id1, err := getOrCreateObjectRole(ctx, tx1, defID, str("inventory"), i64(42))
+	id1, err := getOrCreateObjectRole(ctx, tx1, defID, str("widget"), i64(42))
 	if err != nil {
 		tx1.Rollback()
 		t.Fatalf("winner getOrCreateObjectRole: %v", err)
 	}
 
-	// Loser: races for the same scope in tx2; its INSERT blocks on tx1's index entry.
 	type result struct {
 		id  int64
 		err error
@@ -382,7 +380,7 @@ func TestGetOrCreateObjectRole_LoserReSelects(t *testing.T) {
 			done <- result{0, err}
 			return
 		}
-		id2, err := getOrCreateObjectRole(ctx, tx2, defID, str("inventory"), i64(42))
+		id2, err := getOrCreateObjectRole(ctx, tx2, defID, str("widget"), i64(42))
 		if err != nil {
 			tx2.Rollback()
 			done <- result{0, err}
@@ -391,7 +389,6 @@ func TestGetOrCreateObjectRole_LoserReSelects(t *testing.T) {
 		done <- result{id2, tx2.Commit()}
 	}()
 
-	// Release tx1 only once tx2 is actually blocked on the object_roles insert lock.
 	waitForBlockedOn(t, db, "object_roles")
 	if err := tx1.Commit(); err != nil {
 		t.Fatalf("commit tx1: %v", err)
@@ -437,22 +434,19 @@ func TestVisibleIDs_GlobalVsScoped(t *testing.T) {
 	ctx := context.Background()
 	s, db := newTestStore(t)
 	for _, id := range []int64{42, 43, 44} {
-		mustExec(t, db, `INSERT INTO inventories (id) VALUES ($1)`, id)
+		mustExec(t, db, `INSERT INTO widgets (id) VALUES ($1)`, id)
 	}
 
-	// Global viewer.
-	gDef := seedDefWithPerm(t, db, "System Auditor", nil, "view_inventory", "inventory", "view")
+	gDef := seedDefWithPerm(t, db, "Widget Viewer (global)", nil, "view_widget", "widget", "view")
 	gOR := seedObjectRole(t, db, gDef, nil, nil)
 	mustExec(t, db, `INSERT INTO role_user_assignments (role_definition_id, user_id, object_role_id) VALUES ($1, $2, $3)`, gDef, 1, gOR)
 
-	// Scoped viewer: inventory 43 only.
-	sDef := seedDefWithPerm(t, db, "Inventory Reader", str("inventory"), "view_inventory_scoped_placeholder", "inventory", "view")
-	// Reuse the canonical codename for the scoped eval row (definitions can share a codename).
-	sOR := seedObjectRole(t, db, sDef, str("inventory"), i64(43))
-	mustExec(t, db, `INSERT INTO role_evaluations (object_role_id, content_type, object_id, codename) VALUES ($1, 'inventory', 43, 'view_inventory')`, sOR)
+	sDef := seedDefWithPerm(t, db, "Widget Viewer (scoped)", str("widget"), "view_widget_scoped_placeholder", "widget", "view")
+	sOR := seedObjectRole(t, db, sDef, str("widget"), i64(43))
+	mustExec(t, db, `INSERT INTO role_evaluations (object_role_id, content_type, object_id, codename) VALUES ($1, 'widget', 43, 'view_widget')`, sOR)
 	mustExec(t, db, `INSERT INTO role_user_assignments (role_definition_id, user_id, object_role_id) VALUES ($1, $2, $3)`, sDef, 2, sOR)
 
-	globalIDs, err := s.VisibleIDs(ctx, Subject{UserID: 1}, ActionView, ContentTypeInventory)
+	globalIDs, err := s.VisibleIDs(ctx, rbac.Subject{UserID: 1}, "view", "widget")
 	if err != nil {
 		t.Fatalf("VisibleIDs global: %v", err)
 	}
@@ -460,19 +454,12 @@ func TestVisibleIDs_GlobalVsScoped(t *testing.T) {
 		t.Fatalf("global VisibleIDs = %v, want [42 43 44]", globalIDs)
 	}
 
-	scopedIDs, err := s.VisibleIDs(ctx, Subject{UserID: 2}, ActionView, ContentTypeInventory)
+	scopedIDs, err := s.VisibleIDs(ctx, rbac.Subject{UserID: 2}, "view", "widget")
 	if err != nil {
 		t.Fatalf("VisibleIDs scoped: %v", err)
 	}
 	if !equalInts(scopedIDs, []int64{43}) {
 		t.Fatalf("scoped VisibleIDs = %v, want [43]", scopedIDs)
-	}
-}
-
-func mustGet(t *testing.T, db *sqlx.DB, dest any, query string, args ...any) {
-	t.Helper()
-	if err := db.Get(dest, query, args...); err != nil {
-		t.Fatalf("query %q: %v", query, err)
 	}
 }
 
