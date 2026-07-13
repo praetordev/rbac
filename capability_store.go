@@ -53,8 +53,8 @@ const roleDefinitionCols = `id, name, description, managed, content_type, create
 // codename Codename(obj.Type, action). An action outside obj.Type's catalog is a
 // programming error, surfaced as an error (→ 500) rather than a silent deny.
 func (s *CapabilityStore) Can(ctx context.Context, sub Subject, action Action, obj Object) (bool, error) {
-	if !IsValidCapability(obj.Type, action) {
-		return false, wrap("CapabilityStore.Can", fmt.Errorf("capability %q is not defined for content type %q", action, obj.Type))
+	if err := checkCapabilityDefined(obj.Type, action); err != nil {
+		return false, wrap("CapabilityStore.Can", err)
 	}
 	return s.CanCodename(ctx, sub, Codename(obj.Type, action), obj)
 }
