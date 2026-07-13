@@ -1,4 +1,4 @@
-module github.com/praetordev/rbac
+module github.com/praetordev/rbac/v2
 
 go 1.25.0
 
