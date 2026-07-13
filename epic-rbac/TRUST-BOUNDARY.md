@@ -186,6 +186,29 @@ or executed; a payload matches only a literal equal to itself. The engine's
 totality/purity (no input becomes code) *is* the injection defense; no perimeter is
 needed. *Proof:* `TestByDesign_InjectionShapedValuesAreOpaque`.
 
+## Drop-in genericness — capstone (`TestDropIn_ForeignVocabulary`)
+
+The DoD's drop-in test: a wholly foreign policy world (a content-moderation pipeline
+— action vocabulary `publish`/`retract`/`escalate`, `channel-*` scopes, first-match
+priority, `not`, and a foreign `clearance` attribute) run through the SAME engine
+unchanged, parse → snapshot → evaluate → trace. It passed with **no engine change**,
+and stands as a regression guard against structural leaks grep can't catch. It was
+built to exercise two things the primary fixtures under-cover: **`not`** (no primary
+policy fixture uses it) and **first-match as the lead strategy** (the capability demo
+leans deny-overrides).
+
+**Boundary the capstone surfaced (reported, not forced green).** The engine is generic
+over *values* (opaque capabilities, scopes, needs) and over *structure* (any condition
+tree, either strategy), but its attribute *vocabulary* is closed to
+`{need, scope, grant.cap, grant.scope, grant.effect}` (`env.lookup`). A foreign
+*matching* resource/context attribute — a real `clearance`, a `time` of day — is
+therefore **not expressible**; it resolves as absent. So "generic RBAC engine" here
+means a capability-grant model with opaque tokens, **not** an open attribute-bag ABAC
+engine. Supporting arbitrary attributes would require changing `env.lookup` / `Query` /
+`Grant` — an engine change deliberately NOT made (out of scope). In the capstone the
+foreign attribute is exercised as the required absent case, confirming absent-is-a-
+non-match holds in a domain the engine has never seen.
+
 ## Invariants any future change must preserve
 
 - No engine code gains input-distrust beyond parser bounding (rows 1–6).
@@ -199,5 +222,7 @@ needed. *Proof:* `TestByDesign_InjectionShapedValuesAreOpaque`.
 - Absent attributes are non-matches against every concrete value (including `""`) and
   never coerce to `""`; absence propagates by three-valued logic so it can never become
   a match via `!=` or `not`. Present-empty is distinct from absent in the verdict.
+- The drop-in capstone (`TestDropIn_ForeignVocabulary`) runs a foreign vocabulary
+  through the engine unchanged; a future baked-in structural assumption trips it red.
 - All malformed/partial/pathological policy fails closed to deny against the last
   known-good snapshot.
