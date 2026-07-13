@@ -88,6 +88,59 @@
 //	                             name is absent. If you expected to pass arbitrary context
 //	                             attributes, you cannot.
 //
+// # Authoring a policy bundle
+//
+// A bundle is a JSON array of rules, parsed once by [NewSnapshot]. Each rule is:
+//
+//	{ "name": "<label>", "effect": "allow" | "deny", "when": <condition> }
+//
+// name is a human label (it may collide; the engine identifies rules by position/ID, never
+// by name). effect is the verdict the rule casts when it matches. when is a CONDITION TREE
+// of exactly these node types, each a single-key JSON object:
+//
+//	{ "attr": "<name>" }             a value: one of the five attributes (need, scope,
+//	                                 grant.cap, grant.scope, grant.effect)
+//	{ "lit":  "<string>" }           a value: a constant string
+//	{ "eq":  [ <value>, <value> ] }  true iff the two values are equal
+//	{ "ne":  [ <value>, <value> ] }  true iff the two values differ
+//	{ "all": [ <cond>, ... ] }       AND: true iff every operand is true (>= 1 operand)
+//	{ "any": [ <cond>, ... ] }       OR:  true iff some operand is true  (>= 1 operand)
+//	{ "not": <cond> }                negation of one operand
+//
+// A rule MATCHES when SOME grant the subject holds makes its when tree true — the match is
+// existential over Query.Grants, and grant.cap/grant.scope/grant.effect refer to the grant
+// currently being tried. (A rule therefore matches only if the subject holds at least one
+// grant, even when its condition names no grant attribute.) A malformed tree is rejected at
+// parse time with a specific error — unknown node type, wrong operand count, an empty
+// object, or an over-nested / over-large policy — and a rejected bundle never becomes a
+// snapshot.
+//
+// The combining strategy, chosen at [NewSnapshot] time, folds the rules into one verdict and
+// determines how much rule ORDER matters:
+//
+//	denyOverrides — a matching Deny is a veto: it wins wherever it sits, overriding a
+//	                matching Allow. Order barely matters; author broad allows with denies as
+//	                carve-outs. Default-deny if nothing matches.
+//	firstMatch    — the first matching rule decides, full stop. Here ORDER IS THE POLICY:
+//	                put specific exceptions first, general rules last.
+//
+// See the runnable [Example_authoring].
+//
+// # Enforcing a decision at the boundary (the PEP)
+//
+// The engine is a Policy Decision Point; enforcement is yours. Wire a Policy Enforcement
+// Point inline at the resource boundary — the one place a request crosses into a protected
+// operation — so no request reaches the operation without a permit:
+//
+//  1. Resolve the subject's grants from a TRUSTED source keyed by a verified identity (see
+//     "Trust"), never from request input.
+//  2. Build the [Query]: the resolved Grants, the Need (the action), the Scope (the resource).
+//  3. [Decide], then ENFORCE — proceed only if Decision.Allow; otherwise refuse.
+//  4. Disclose minimally to the caller: [Decision.Disclose](Minimal) is a constant per
+//     verdict and leaks no structure. Log Disclose(Full) to your OWN logs for diagnosis.
+//
+// See the runnable [Example_enforcement].
+//
 // # Trust
 //
 // The engine trusts every [Grant] in Query.Grants EQUALLY and cannot detect a forged one;
@@ -98,5 +151,8 @@
 //
 // # Examples
 //
-// See the runnable [ExampleDecide] for the smallest correct call end to end.
+// Runnable, verified end to end:
+//   - [ExampleDecide] — the smallest correct call.
+//   - [Example_authoring] — the full condition vocabulary and deny-overrides in one bundle.
+//   - [Example_enforcement] — a PEP at the resource boundary, refusing on deny.
 package main
