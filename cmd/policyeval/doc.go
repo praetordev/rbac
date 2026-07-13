@@ -114,6 +114,24 @@
 // engine. Design within the closed vocabulary, or choose a different tool; do not assume the
 // missing pieces are there.
 //
+// # Flattening hierarchies (your responsibility)
+//
+// The engine is shape-agnostic: scopes and capabilities are opaque strings compared by exact
+// equality, with no notion of hierarchy, containment, prefix, or inheritance. A grant at
+// "squadron-1" does NOT cover "squadron-1/ship-9"; a grant at an org does not cascade to its
+// teams. Any tree — org -> dept -> team, a resource path, a group's inherited capabilities —
+// must be FLATTENED by the consumer into namespaced scopes (or attributes) BEFORE the call.
+//
+// You choose the containment convention, because only you know it. Two common shapes:
+//
+//   - Enumerate: expand a broad authority into one grant per covered leaf (a command over
+//     squadron-1 becomes grants for squadron-1/ship-9, squadron-1/ship-10, ...).
+//   - Namespace: encode the path in the scope string (squadron-1/ship-9) and issue/request the
+//     fully-qualified scope, so exact equality does the matching.
+//
+// Either way, the hierarchy is resolved on YOUR side of the boundary; the engine only ever
+// compares the already-flattened strings. See the runnable [Example_flattening].
+//
 // # Missing attributes (absent is a non-match)
 //
 // When a policy names an attribute the engine does not expose — anything outside the five
@@ -282,4 +300,5 @@
 //   - [Example_absentVsEmpty] — an absent attribute is a non-match, even against "".
 //   - [Example_failClosed] — no snapshot and a bad load both deny; last known-good is kept.
 //   - [Example_disclosure] — Minimal hides structure from the caller; Full is for your logs.
+//   - [Example_flattening] — a hierarchy flattened into namespaced scopes; no prefix logic.
 package main
