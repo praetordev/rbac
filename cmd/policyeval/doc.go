@@ -114,6 +114,24 @@
 // engine. Design within the closed vocabulary, or choose a different tool; do not assume the
 // missing pieces are there.
 //
+// # Missing attributes (absent is a non-match)
+//
+// When a policy names an attribute the engine does not expose — anything outside the five
+// closed names — that attribute is ABSENT. Absence is first-class and uses three-valued
+// (Kleene) logic: an absent operand makes its comparison UNKNOWN, never true. A rule matches
+// only when its condition is definitely true, so:
+//
+//   - Absent is a non-match against EVERY value, including the empty string. attr == "" is
+//     true only when the attribute is PRESENT and empty (e.g. a global scope ""), never when
+//     it is absent. Absent and present-empty differ in the VERDICT, not just the trace.
+//   - not() of an absent comparison stays unknown — negation can never turn absence into a
+//     match. There is no way to open access by referencing a missing attribute.
+//   - all() fails if any branch is definitely false; any() still succeeds if another branch is
+//     definitely true. A missing attribute closes an all(), but an any()-branch can tolerate it.
+//
+// The upshot: missing data never grants access; it only ever withholds it. See the runnable
+// [Example_absentVsEmpty].
+//
 // # Authoring a policy bundle
 //
 // A bundle is a JSON array of rules, parsed once by [NewSnapshot]. Each rule is:
@@ -166,6 +184,40 @@
 //     verdict and leaks no structure. Log Disclose(Full) to your OWN logs for diagnosis.
 //
 // See the runnable [Example_enforcement].
+//
+// # Fail-closed degradation
+//
+// Every failure mode denies rather than opens:
+//
+//   - No snapshot installed -> deny. Decide against a nil snapshot returns deny; it never
+//     panics and never opens.
+//   - A malformed, oversized, or pathologically nested bundle is REJECTED at parse time and
+//     the previously installed (last known-good) snapshot stays in place untouched. A bad load
+//     never becomes current, never clears the policy, and never opens access.
+//   - A source fetch that fails or exceeds the size bound leaves the last known-good snapshot
+//     serving (the loader treats it as a refresh failure).
+//
+// The safe-degradation guarantee: given trusted inputs the engine is total and deterministic,
+// and under any policy-plumbing failure it withholds access rather than granting it. See the
+// runnable [Example_failClosed].
+//
+// # Disclosing a decision (logs vs caller)
+//
+// A [Decision] carries a full structured trace so a policy author can self-diagnose a denial —
+// but that same detail would let a caller probe and reverse-engineer the ruleset. Choose the
+// audience explicitly with [Decision.Disclose]:
+//
+//   - Disclose(Full) -> your OWN logs. The complete rationale: which rules matched or were
+//     skipped, the deciding rule, per-node comparison results, absent-vs-unequal, and the
+//     snapshot id.
+//   - Disclose(Minimal) -> the caller. A constant per verdict ("access permitted" /
+//     "access denied") that names no rule, attribute, or snapshot, so no two permits — or two
+//     denials — are distinguishable from it.
+//
+// The zero value of the level is Minimal, so forgetting to choose one fails SAFE (reveals the
+// least). The engine adds no identifier of its own; to correlate a caller-facing denial with
+// its full logged trace, log Disclose(Full) alongside YOUR request id. Never send Full to the
+// caller — it leaks the ruleset. See the runnable [Example_disclosure].
 //
 // # Trust — attribute provenance (read this)
 //
@@ -227,4 +279,7 @@
 //   - [Example_enforcement] — a PEP at the resource boundary, refusing on deny.
 //   - [Example_attributeProvenance] — forged vs trusted grants; the engine cannot tell.
 //   - [Example_genericnessBoundary] — "*" is not a wildcard; the engine only compares equal.
+//   - [Example_absentVsEmpty] — an absent attribute is a non-match, even against "".
+//   - [Example_failClosed] — no snapshot and a bad load both deny; last known-good is kept.
+//   - [Example_disclosure] — Minimal hides structure from the caller; Full is for your logs.
 package main
