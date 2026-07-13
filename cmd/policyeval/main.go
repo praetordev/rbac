@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -211,6 +212,25 @@ func refOf(r Rule) RuleRef { return RuleRef{ID: r.ID, Name: r.Name, Effect: r.Ef
 //go:embed policy.json
 var policyJSON []byte
 
+// Parser bounds. A policy is untrusted input by contract (its integrity is a perimeter
+// concern, see TRUST-BOUNDARY.md), but a *technically valid* policy must still not be able
+// to exhaust resources at parse time. These limits close that denial-of-service surface —
+// the ONE piece of input-distrust that belongs in the engine, and only because it guards
+// the engine's own liveness, not the meaning of any input.
+const (
+	maxPolicyBytes = 1 << 20 // reject documents larger than 1 MiB before parsing
+	maxRules       = 1024    // reject policies with more rules than this
+	maxDepth       = 64      // reject condition trees nested deeper than this
+	maxNodes       = 10000   // reject policies with more condition nodes than this (total)
+	maxLiteralLen  = 4096    // reject string literals longer than this
+)
+
+// parseBudget tracks resource consumption across a single policy parse so that width
+// (node count) is bounded even when depth is not exceeded.
+type parseBudget struct {
+	nodes int
+}
+
 // rawRule is the on-the-wire shape of one rule; When stays raw for recursive parsing.
 type rawRule struct {
 	Name   string          `json:"name"`
@@ -228,10 +248,17 @@ type rawRule struct {
 //	{"all": [<cond>, ...]}        / {"any": [...]}  conjoin / disjoin conditions
 //	{"not":  <cond>}              negate a condition
 func parsePolicy(data []byte) ([]Rule, error) {
+	if len(data) > maxPolicyBytes {
+		return nil, fmt.Errorf("policy is %d bytes, exceeds maximum of %d", len(data), maxPolicyBytes)
+	}
 	var raws []rawRule
 	if err := json.Unmarshal(data, &raws); err != nil {
 		return nil, fmt.Errorf("policy must be a JSON array of rules: %w", err)
 	}
+	if len(raws) > maxRules {
+		return nil, fmt.Errorf("policy has %d rules, exceeds maximum of %d", len(raws), maxRules)
+	}
+	budget := &parseBudget{}
 	out := make([]Rule, len(raws))
 	for i, rr := range raws {
 		if rr.Name == "" {
@@ -241,7 +268,7 @@ func parsePolicy(data []byte) ([]Rule, error) {
 		if err != nil {
 			return nil, fmt.Errorf("rule %q: %w", rr.Name, err)
 		}
-		cond, err := parseNode(rr.When)
+		cond, err := parseNode(rr.When, 1, budget)
 		if err != nil {
 			return nil, fmt.Errorf("rule %q: %w", rr.Name, err)
 		}
@@ -262,14 +289,30 @@ func parseEffect(s string) (Effect, error) {
 }
 
 // parseNode parses one condition node — a single-key object whose key names the node type.
-func parseNode(raw json.RawMessage) (*Node, error) {
+// depth is this node's nesting level (root conditions start at 1); budget bounds the total
+// number of nodes across the whole policy. Both guard against pathological but valid input.
+func parseNode(raw json.RawMessage, depth int, budget *parseBudget) (*Node, error) {
+	if depth > maxDepth {
+		return nil, fmt.Errorf("condition nesting exceeds maximum depth of %d", maxDepth)
+	}
+	budget.nodes++
+	if budget.nodes > maxNodes {
+		return nil, fmt.Errorf("policy exceeds maximum of %d condition nodes", maxNodes)
+	}
+
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		return nil, fmt.Errorf("condition must be an object: %w", err)
 	}
-	if len(obj) != 1 {
-		return nil, fmt.Errorf("condition must have exactly one key, got %d", len(obj))
+	// Zero and multiple keys are distinct authoring mistakes; report them distinctly rather
+	// than silently dispatching on whichever key map iteration happens to yield first.
+	switch {
+	case len(obj) == 0:
+		return nil, fmt.Errorf("condition object has no keys; expected exactly one node type")
+	case len(obj) > 1:
+		return nil, fmt.Errorf("condition object has %d keys (%s); expected exactly one node type", len(obj), joinKeys(obj))
 	}
+
 	for key, val := range obj {
 		switch key {
 		case "attr":
@@ -283,9 +326,12 @@ func parseNode(raw json.RawMessage) (*Node, error) {
 			if err != nil {
 				return nil, fmt.Errorf("lit: %w", err)
 			}
+			if len(s) > maxLiteralLen {
+				return nil, fmt.Errorf("lit is %d bytes, exceeds maximum of %d", len(s), maxLiteralLen)
+			}
 			return lit(s), nil
 		case "eq", "ne":
-			ops, err := parseNodeList(val)
+			ops, err := parseNodeList(val, depth+1, budget)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", key, err)
 			}
@@ -297,7 +343,7 @@ func parseNode(raw json.RawMessage) (*Node, error) {
 			}
 			return ne(ops[0], ops[1]), nil
 		case "all", "any":
-			ops, err := parseNodeList(val)
+			ops, err := parseNodeList(val, depth+1, budget)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", key, err)
 			}
@@ -309,7 +355,7 @@ func parseNode(raw json.RawMessage) (*Node, error) {
 			}
 			return or(ops...), nil
 		case "not":
-			child, err := parseNode(val)
+			child, err := parseNode(val, depth+1, budget)
 			if err != nil {
 				return nil, fmt.Errorf("not: %w", err)
 			}
@@ -321,14 +367,24 @@ func parseNode(raw json.RawMessage) (*Node, error) {
 	return nil, fmt.Errorf("empty condition")
 }
 
-func parseNodeList(raw json.RawMessage) ([]*Node, error) {
+// joinKeys returns the keys of a condition object, sorted, for a deterministic error message.
+func joinKeys(obj map[string]json.RawMessage) string {
+	keys := make([]string, 0, len(obj))
+	for k := range obj {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ", ")
+}
+
+func parseNodeList(raw json.RawMessage, depth int, budget *parseBudget) ([]*Node, error) {
 	var arr []json.RawMessage
 	if err := json.Unmarshal(raw, &arr); err != nil {
 		return nil, fmt.Errorf("expected an array of conditions: %w", err)
 	}
 	nodes := make([]*Node, len(arr))
 	for i, r := range arr {
-		n, err := parseNode(r)
+		n, err := parseNode(r, depth, budget)
 		if err != nil {
 			return nil, fmt.Errorf("operand %d: %w", i, err)
 		}

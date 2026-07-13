@@ -64,6 +64,20 @@ func (h *Holder) Current() *Snapshot { return h.cur.Load() }
 // an in-place edit).
 func (h *Holder) Set(snap *Snapshot) { h.cur.Store(snap) }
 
+// Load parses policyJSON into a new snapshot and installs it ONLY if parsing succeeds. A
+// malformed, oversized, or pathological bundle is rejected: the error is returned and the
+// current (last known-good) snapshot stays in place untouched. A bad load therefore can
+// never open access, clear the policy, or crash the engine — it fails closed to whatever
+// was already installed (which may be nil, i.e. deny-all).
+func (h *Holder) Load(id string, policyJSON []byte, combine Strategy) error {
+	snap, err := NewSnapshot(id, policyJSON, combine)
+	if err != nil {
+		return err // fail closed: current snapshot untouched
+	}
+	h.Set(snap)
+	return nil
+}
+
 // Decide captures the current snapshot and evaluates q against it. A decision started this
 // way is pinned to the snapshot it captured, even if Set swaps a new one in immediately
 // after.
