@@ -1,6 +1,9 @@
 package rbac
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // This file defines the Policy Decision Point (PDP) contract for Praetor's
 // capability RBAC. The capability store (services/api) implements Authorizer;
@@ -65,6 +68,17 @@ type Authorizer interface {
 	VisibleIDs(ctx context.Context, sub Subject, action Action, t ContentType) ([]int64, error)
 }
 
+// checkCapabilityDefined enforces the shared Can contract: an (action, contentType)
+// pair outside the catalog is a programming error and must surface as an error, never a
+// silent allow or deny. Both Can implementations — the store and the legacy decorator —
+// call this so the contract cannot drift between them.
+func checkCapabilityDefined(ct ContentType, action Action) error {
+	if IsValidCapability(ct, action) {
+		return nil
+	}
+	return fmt.Errorf("capability %q is not defined for content type %q", action, ct)
+}
+
 // globalLister is the optional capability the legacy decorator needs to answer
 // VisibleIDs for a break-glass superuser (who has no per-object rows): list
 // every id of a type. The capability store satisfies it via AllIDsOfType.
@@ -91,6 +105,12 @@ type legacyFlags struct {
 }
 
 func (l *legacyFlags) Can(ctx context.Context, sub Subject, action Action, obj Object) (bool, error) {
+	// Validate BEFORE the bypass: a superuser checking an undefined capability is a
+	// programming error and must still error, not be silently allowed. Superusers are
+	// exactly who test new code, so swallowing it here hides the bug from them.
+	if err := checkCapabilityDefined(obj.Type, action); err != nil {
+		return false, wrap("legacyFlags.Can", err)
+	}
 	if sub.legacySuperuser {
 		return true, nil
 	}
