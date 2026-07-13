@@ -70,7 +70,7 @@ independently: *if this defense were removed, where would the fix have to go?*
 | 7 | Permit-always / overly-broad policy | Upstream | Engine test (prove-by-design) | **Policy source** (Story 4); `TestByDesign_PermitAlwaysPolicyEvaluatedFaithfully` |
 | 8 | Forged attributes (e.g. fake grant/`subject.roles`) | Upstream | Engine test (prove-by-design) | **Attribute-resolution boundary** (Story 3); provenance unrepresented in `Grant` by design; `TestByDesign_ForgedGrantIndistinguishableFromReal` |
 | 9 | Injection-shaped attribute values (`admin'; permit all`, sigils) | By design | Engine test (prove-by-design) | Engine's opaque compare; `TestByDesign_InjectionShapedValuesAreOpaque` |
-| 10 | Attribute sourced from request-controlled input | Upstream | Documented contract | Attribute trust contract (Story 3) — ⏳ |
+| 10 | Attribute sourced from request-controlled input | Upstream | Documented contract | ✅ Attribute trust contract in `INTEGRATION.md`; behaviour pinned by `attribute_contract_test.go` |
 | 11 | Malicious/tampered policy bundle becomes a snapshot | Upstream | Mechanism + docs | Integrity-checked bundles before swap (Story 4) — ⏳ |
 | 12 | Full trace lets an end user probe the ruleset | By design | Engine feature | Trace disclosure levels (full-to-logs vs minimal-to-user) (Story 5) — ⏳ |
 
@@ -113,7 +113,15 @@ opaque compare and the fix is engine code to restore it). Rows 10–11 are genui
   demonstration technique is uniform, but the classifications split: row 9 is
   closed *by design* in the evaluator; rows 7–8 are closed *upstream* (perimeter),
   the tests proving why. Findings below.
-- **Story 3 — Attribute trust contract (perimeter + docs).** ⏳ Row 10.
+- **Story 3 — Attribute trust contract (perimeter + docs).** ✅ Done. Row 10.
+  `INTEGRATION.md` states the contract prominently (verified sources only, never
+  request-controlled input) with a worked correct-vs-incorrect example on generic
+  fixtures. `attribute_contract_test.go` pins absent/empty/null behaviour and trace
+  rendering — including the absent-vs-empty-literal subtlety the contract guards.
+  No engine code added. **Note:** the epic's "absent → comparison false" holds
+  against concrete values, but absent compares *equal* to an empty literal in the
+  decision (engine reads absent as ""); this is documented, not fixed, since a fix
+  would be an engine semantic change outside Story 3's scope. Flagged for a decision.
 - **Story 4 — Policy source integrity (perimeter).** ⏳ Row 11.
 - **Story 5 — Trace disclosure levels (engine feature).** ⏳ Row 12.
 
