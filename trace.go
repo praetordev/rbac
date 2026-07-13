@@ -1,4 +1,4 @@
-package main
+package rbac
 
 import (
 	"fmt"
@@ -437,23 +437,4 @@ func indent(lines []string, pad string) []string {
 		out[i] = pad + l
 	}
 	return out
-}
-
-// demoDisclosure prints the same denial rendered for two audiences: the structure-free
-// Minimal reason for the requester, and the complete Full rationale for the app's logs.
-func demoDisclosure() {
-	snap := mustSnapshot(NewSnapshot("main", policyJSON, denyOverrides))
-	q := Query{Grants: []Grant{{"*", "", Allow}, {"write", "obj9", Deny}}, Need: "write", Scope: "obj9"}
-	d := Decide(snap, q)
-
-	fmt.Println("\n════════ trace disclosure demo ════════")
-	fmt.Println("one denial, two audiences — the decision is identical, only the disclosure differs.")
-
-	fmt.Println("\nto the REQUESTER — Disclose(Minimal), reveals no structure:")
-	fmt.Printf("    %s\n", d.Disclose(Minimal))
-
-	fmt.Println("\nto the APP'S LOGS — Disclose(Full), complete rationale:")
-	for _, line := range strings.Split(d.Disclose(Full), "\n") {
-		fmt.Printf("    %s\n", line)
-	}
 }

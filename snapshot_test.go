@@ -1,4 +1,4 @@
-package main
+package rbac
 
 import (
 	"strings"
@@ -22,8 +22,8 @@ func writeReq() Query {
 
 // 1. Same request, different snapshots -> different decisions.
 func TestDecisionDiffersBySnapshot(t *testing.T) {
-	v1 := mustSnap(t, "v1", policyV1JSON, denyOverrides)
-	v2 := mustSnap(t, "v2", policyV2JSON, denyOverrides)
+	v1 := mustSnap(t, "v1", policyV1JSON, DenyOverrides)
+	v2 := mustSnap(t, "v2", policyV2JSON, DenyOverrides)
 
 	if Decide(v1, writeReq()).Allow {
 		t.Error("v1 should DENY write")
@@ -35,8 +35,8 @@ func TestDecisionDiffersBySnapshot(t *testing.T) {
 
 // 2. Atomic swap: flip the holder v1 -> v2; decisions before use v1's rules, after use v2's.
 func TestAtomicSwap(t *testing.T) {
-	v1 := mustSnap(t, "v1", policyV1JSON, denyOverrides)
-	v2 := mustSnap(t, "v2", policyV2JSON, denyOverrides)
+	v1 := mustSnap(t, "v1", policyV1JSON, DenyOverrides)
+	v2 := mustSnap(t, "v2", policyV2JSON, DenyOverrides)
 	h := NewHolder(v1)
 
 	before := h.Decide(writeReq())
@@ -55,8 +55,8 @@ func TestAtomicSwap(t *testing.T) {
 // 3. Mid-flight immutability: a decision that captured v1 stays v1 even if v2 swaps in
 // before it finishes.
 func TestMidFlightImmutability(t *testing.T) {
-	v1 := mustSnap(t, "v1", policyV1JSON, denyOverrides)
-	v2 := mustSnap(t, "v2", policyV2JSON, denyOverrides)
+	v1 := mustSnap(t, "v1", policyV1JSON, DenyOverrides)
+	v2 := mustSnap(t, "v2", policyV2JSON, DenyOverrides)
 	h := NewHolder(v1)
 
 	snap := h.Current() // capture v1 at the start of a decision
@@ -74,7 +74,7 @@ func TestMidFlightImmutability(t *testing.T) {
 // 4. Version pinning: the decision reports which snapshot produced it — as a field and in
 // the trace.
 func TestVersionPinning(t *testing.T) {
-	v2 := mustSnap(t, "v2", policyV2JSON, denyOverrides)
+	v2 := mustSnap(t, "v2", policyV2JSON, DenyOverrides)
 	d := Decide(v2, writeReq())
 
 	if d.Snapshot != "v2" {
@@ -106,8 +106,8 @@ func TestFailClosed(t *testing.T) {
 
 // Sanity: both snapshots agree where they should — read is allowed under v1 and v2.
 func TestReadAllowedBothVersions(t *testing.T) {
-	v1 := mustSnap(t, "v1", policyV1JSON, denyOverrides)
-	v2 := mustSnap(t, "v2", policyV2JSON, denyOverrides)
+	v1 := mustSnap(t, "v1", policyV1JSON, DenyOverrides)
+	v2 := mustSnap(t, "v2", policyV2JSON, DenyOverrides)
 	readReq := Query{Grants: []Grant{{"read", "obj1", Allow}}, Need: "read", Scope: "obj1"}
 
 	if !Decide(v1, readReq).Allow {

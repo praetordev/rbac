@@ -1,4 +1,4 @@
-package main
+package rbac
 
 import (
 	"strings"
@@ -54,7 +54,7 @@ const foreignPolicy = `[
 
 func TestDropIn_ForeignVocabulary(t *testing.T) {
 	// Full path: parse + freeze into a snapshot that leans on first-match, then Decide.
-	snap := mustSnap(t, "moderation-v1", []byte(foreignPolicy), firstMatch)
+	snap := mustSnap(t, "moderation-v1", []byte(foreignPolicy), FirstMatch)
 
 	cases := []struct {
 		name    string

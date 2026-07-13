@@ -1,4 +1,4 @@
-package main
+package rbac
 
 import (
 	"strings"
@@ -33,7 +33,7 @@ func TestAbsentAttributeShowsAbsentNotUnequal(t *testing.T) {
 	}}
 	q := Query{Grants: []Grant{{"read", "obj1", Allow}}, Need: "read", Scope: "obj1"}
 
-	d := evaluate(rules, q, denyOverrides)
+	d := evaluate(rules, q, DenyOverrides)
 	if d.Allow {
 		t.Fatal("expected DENY (neither branch holds)")
 	}
@@ -101,7 +101,7 @@ func TestDenyOverridesTraceShowsDenyBeatingPermit(t *testing.T) {
 		Scope:  "obj9",
 	}
 
-	d := evaluate(rules, q, denyOverrides)
+	d := evaluate(rules, q, DenyOverrides)
 	if d.Allow {
 		t.Fatal("deny-overrides must DENY when a deny rule matches")
 	}
@@ -130,7 +130,7 @@ func TestDenyOverridesTraceShowsDenyBeatingPermit(t *testing.T) {
 
 // 3. The trace names the snapshot id that produced the decision (ties to the snapshot step).
 func TestTraceNamesSnapshotID(t *testing.T) {
-	v2 := mustSnap(t, "v2", policyV2JSON, denyOverrides)
+	v2 := mustSnap(t, "v2", policyV2JSON, DenyOverrides)
 	d := Decide(v2, writeReq())
 
 	if d.Trace().Snapshot != "v2" {
@@ -155,7 +155,7 @@ func TestTraceOnVsTraceOffIdenticalDecision(t *testing.T) {
 		{Grants: []Grant{{"*", "", Allow}, {"write", "obj9", Deny}}, Need: "write", Scope: "obj9"},
 		{Grants: nil, Need: "read", Scope: "obj1"},
 	}
-	strategies := map[string]Strategy{"deny-overrides": denyOverrides, "first-match": firstMatch}
+	strategies := map[string]Strategy{"deny-overrides": DenyOverrides, "first-match": FirstMatch}
 
 	for name, combine := range strategies {
 		for i, q := range queries {

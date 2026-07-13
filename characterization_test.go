@@ -1,4 +1,4 @@
-package main
+package rbac
 
 import "testing"
 
@@ -101,8 +101,8 @@ func TestCharacterizationCapabilitySuite(t *testing.T) {
 	cases := []struct {
 		name          string
 		q             Query
-		denyOverrides event
-		firstMatch    event
+		DenyOverrides event
+		FirstMatch    event
 	}{
 		{
 			"global grant of the exact capability",
@@ -153,8 +153,8 @@ func TestCharacterizationCapabilitySuite(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			checkEvent(t, "deny-overrides", rules, evaluate(rules, tc.q, denyOverrides), tc.denyOverrides)
-			checkEvent(t, "first-match", rules, evaluate(rules, tc.q, firstMatch), tc.firstMatch)
+			checkEvent(t, "deny-overrides", rules, evaluate(rules, tc.q, DenyOverrides), tc.DenyOverrides)
+			checkEvent(t, "first-match", rules, evaluate(rules, tc.q, FirstMatch), tc.FirstMatch)
 		})
 	}
 }
@@ -171,10 +171,10 @@ func TestCharacterizationStrategyDivergence(t *testing.T) {
 	q := Query{Grants: []Grant{{"*", "", Allow}, {"write", "obj9", Deny}}, Need: "write", Scope: "obj9"}
 
 	// deny-overrides: the deny wins.
-	checkEvent(t, "deny-overrides", rules, evaluate(rules, q, denyOverrides),
+	checkEvent(t, "deny-overrides", rules, evaluate(rules, q, DenyOverrides),
 		event{allow: false, decider: "explicit-deny", effect: Deny})
 
 	// first-match: the earlier permit wins; the deny never decides.
-	checkEvent(t, "first-match", rules, evaluate(rules, q, firstMatch),
+	checkEvent(t, "first-match", rules, evaluate(rules, q, FirstMatch),
 		event{allow: true, decider: "wildcard-global", effect: Allow})
 }

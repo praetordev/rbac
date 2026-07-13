@@ -1,4 +1,4 @@
-package main
+package rbac
 
 import "fmt"
 
@@ -20,7 +20,7 @@ func ExampleDecide() {
 			{"eq":[{"attr":"grant.scope"},{"attr":"scope"}]}
 		]}}
 	]`)
-	snap, err := NewSnapshot("fleet-v1", policy, denyOverrides)
+	snap, err := NewSnapshot("fleet-v1", policy, DenyOverrides)
 	if err != nil {
 		panic(err)
 	}

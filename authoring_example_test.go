@@ -1,9 +1,9 @@
-package main
+package rbac
 
 import "fmt"
 
 // fleetPolicy is a generic bundle exercising the full condition vocabulary — all / any /
-// not / eq / ne / attr / lit — under denyOverrides. Fixtures are a spaceship fleet; the
+// not / eq / ne / attr / lit — under DenyOverrides. Fixtures are a spaceship fleet; the
 // engine interprets none of these strings.
 //
 //	rule #0 vetoes any operation at the quarantined scope ship-13 (a deny carve-out).
@@ -35,7 +35,7 @@ const fleetPolicy = `[
 // explicit allow, a deny veto, and a default-deny — and how Decider names the rule (or
 // reports that none decided).
 func Example_authoring() {
-	snap, err := NewSnapshot("fleet-v1", []byte(fleetPolicy), denyOverrides)
+	snap, err := NewSnapshot("fleet-v1", []byte(fleetPolicy), DenyOverrides)
 	if err != nil {
 		panic(err)
 	}
@@ -67,7 +67,7 @@ func Example_authoring() {
 // the subject's grants from a store the app controls (never from the request), decides, and
 // refuses on deny — disclosing only the minimal, structure-free reason to the caller.
 func Example_enforcement() {
-	snap, err := NewSnapshot("fleet-v1", []byte(fleetPolicy), denyOverrides)
+	snap, err := NewSnapshot("fleet-v1", []byte(fleetPolicy), DenyOverrides)
 	if err != nil {
 		panic(err)
 	}

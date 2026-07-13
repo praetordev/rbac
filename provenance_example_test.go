@@ -1,4 +1,4 @@
-package main
+package rbac
 
 import (
 	"encoding/json"
@@ -12,7 +12,7 @@ import (
 // ONLY difference is whether Query.Grants came from a source the caller can forge. The
 // engine cannot tell; provenance is the integrator's responsibility.
 func Example_attributeProvenance() {
-	snap, err := NewSnapshot("fleet-v1", []byte(fleetPolicy), denyOverrides)
+	snap, err := NewSnapshot("fleet-v1", []byte(fleetPolicy), DenyOverrides)
 	if err != nil {
 		panic(err)
 	}

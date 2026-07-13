@@ -1,4 +1,4 @@
-package main
+package rbac
 
 import (
 	"bytes"
@@ -52,7 +52,7 @@ func TestReferenceSource_EndToEnd(t *testing.T) {
 	for name, src := range sources {
 		t.Run(name, func(t *testing.T) {
 			h := NewHolder(nil)
-			runPipeline(t, src, h, denyOverrides) // identical pipeline code for either source
+			runPipeline(t, src, h, DenyOverrides) // identical pipeline code for either source
 
 			d := h.Decide(writeReq)
 			if !d.Allow {

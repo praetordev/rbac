@@ -1,4 +1,4 @@
-package main
+package rbac
 
 import (
 	"strings"
@@ -13,7 +13,7 @@ import (
 // decisions with a real snapshot id.
 func mainSnap(t *testing.T) *Snapshot {
 	t.Helper()
-	return mustSnap(t, "main", policyJSON, denyOverrides)
+	return mustSnap(t, "main", policyJSON, DenyOverrides)
 }
 
 // Every DENY, whatever its cause, discloses the identical minimal reason; likewise every
@@ -27,9 +27,9 @@ func TestMinimalReasonConstantAcrossCauses(t *testing.T) {
 	absentRule := mustPolicy(t, `[{"name":"r","effect":"allow","when":{"eq":[{"attr":"subject.dept"},{"lit":"x"}]}}]`)
 
 	denials := map[string]Decision{
-		"default-deny":  evaluate(rules, Query{Grants: []Grant{{"read", "obj1", Allow}}, Need: "read", Scope: "obj2"}, denyOverrides),
-		"explicit-deny": evaluate(rules, Query{Grants: []Grant{{"*", "", Allow}, {"write", "obj9", Deny}}, Need: "write", Scope: "obj9"}, denyOverrides),
-		"absent-attr":   evaluate(absentRule, Query{Grants: []Grant{{"tok", "", Allow}}, Need: "read", Scope: "obj1"}, denyOverrides),
+		"default-deny":  evaluate(rules, Query{Grants: []Grant{{"read", "obj1", Allow}}, Need: "read", Scope: "obj2"}, DenyOverrides),
+		"explicit-deny": evaluate(rules, Query{Grants: []Grant{{"*", "", Allow}, {"write", "obj9", Deny}}, Need: "write", Scope: "obj9"}, DenyOverrides),
+		"absent-attr":   evaluate(absentRule, Query{Grants: []Grant{{"tok", "", Allow}}, Need: "read", Scope: "obj1"}, DenyOverrides),
 		"fail-closed":   Decide(nil, Query{Need: "read"}),
 	}
 	for name, d := range denials {
@@ -42,8 +42,8 @@ func TestMinimalReasonConstantAcrossCauses(t *testing.T) {
 	}
 
 	permits := map[string]Decision{
-		"exact":    evaluate(rules, Query{Grants: []Grant{{"read", "", Allow}}, Need: "read", Scope: "obj1"}, denyOverrides),
-		"wildcard": evaluate(rules, Query{Grants: []Grant{{"*", "", Allow}}, Need: "write", Scope: "obj5"}, denyOverrides),
+		"exact":    evaluate(rules, Query{Grants: []Grant{{"read", "", Allow}}, Need: "read", Scope: "obj1"}, DenyOverrides),
+		"wildcard": evaluate(rules, Query{Grants: []Grant{{"*", "", Allow}}, Need: "write", Scope: "obj5"}, DenyOverrides),
 	}
 	for name, d := range permits {
 		if !d.Allow {
@@ -54,7 +54,7 @@ func TestMinimalReasonConstantAcrossCauses(t *testing.T) {
 		}
 	}
 
-	if evaluate(rules, Query{}, denyOverrides).Disclose(Minimal) == permits["exact"].Disclose(Minimal) {
+	if evaluate(rules, Query{}, DenyOverrides).Disclose(Minimal) == permits["exact"].Disclose(Minimal) {
 		t.Error("permit and deny minimal reasons must differ")
 	}
 }
@@ -101,7 +101,7 @@ func TestFullDisclosureCapturesRationale(t *testing.T) {
 		[]byte(`[{"name":"r","effect":"allow","when":{"any":[
 			{"eq":[{"attr":"need"},{"lit":"delete"}]},
 			{"eq":[{"attr":"subject.dept"},{"lit":"sales"}]}
-		]}}]`), denyOverrides)
+		]}}]`), DenyOverrides)
 	d := Decide(snap, Query{Grants: []Grant{{"tok", "", Allow}}, Need: "read", Scope: "obj1"})
 
 	full := d.Disclose(Full)

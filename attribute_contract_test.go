@@ -1,4 +1,4 @@
-package main
+package rbac
 
 import (
 	"fmt"
@@ -28,7 +28,7 @@ func TestAttributeAbsentComparesFalseAgainstConcrete(t *testing.T) {
 	rules := mustPolicy(t, `[{"name":"r","effect":"allow","when":{"eq":[{"attr":"subject.dept"},{"lit":"sales"}]}}]`)
 	q := Query{Grants: []Grant{{"tok", "", Allow}}, Need: "read", Scope: "obj1"}
 
-	d := evaluate(rules, q, denyOverrides)
+	d := evaluate(rules, q, DenyOverrides)
 	if d.Allow {
 		t.Fatal("an absent attribute must not match a concrete value")
 	}
@@ -50,7 +50,7 @@ func TestAttributeEmptyIsPresentDistinctFromAbsent(t *testing.T) {
 
 	// scope is present and empty -> matches lit("").
 	empty := Query{Grants: []Grant{{"tok", "", Allow}}, Need: "read", Scope: ""}
-	d := evaluate(rules, empty, denyOverrides)
+	d := evaluate(rules, empty, DenyOverrides)
 	if !d.Allow {
 		t.Error("a present-empty scope should match an empty-literal comparison")
 	}
@@ -61,7 +61,7 @@ func TestAttributeEmptyIsPresentDistinctFromAbsent(t *testing.T) {
 
 	// A non-empty scope is present but unequal -> no match, and NOT flagged absent.
 	nonEmpty := Query{Grants: []Grant{{"tok", "", Allow}}, Need: "read", Scope: "obj1"}
-	d2 := evaluate(rules, nonEmpty, denyOverrides)
+	d2 := evaluate(rules, nonEmpty, DenyOverrides)
 	if d2.Allow {
 		t.Error("scope=obj1 must not match lit(\"\")")
 	}
@@ -82,7 +82,7 @@ func TestAbsentIsNonMatchEvenAgainstEmptyLiteral(t *testing.T) {
 
 	// Absent attribute vs empty literal -> DENY (the fix; previously ALLOW).
 	absent := mustPolicy(t, fmt.Sprintf(rule, "subject.dept"))
-	dAbsent := evaluate(absent, Query{Grants: []Grant{{"tok", "", Allow}}, Need: "read", Scope: "obj1"}, denyOverrides)
+	dAbsent := evaluate(absent, Query{Grants: []Grant{{"tok", "", Allow}}, Need: "read", Scope: "obj1"}, DenyOverrides)
 	if dAbsent.Allow {
 		t.Error("absent attribute must NOT match an empty literal (absent is a non-match against all concrete values)")
 	}
@@ -92,7 +92,7 @@ func TestAbsentIsNonMatchEvenAgainstEmptyLiteral(t *testing.T) {
 
 	// Present-but-empty attribute vs empty literal -> ALLOW (unchanged).
 	present := mustPolicy(t, fmt.Sprintf(rule, "scope"))
-	dPresent := evaluate(present, Query{Grants: []Grant{{"tok", "", Allow}}, Need: "read", Scope: ""}, denyOverrides)
+	dPresent := evaluate(present, Query{Grants: []Grant{{"tok", "", Allow}}, Need: "read", Scope: ""}, DenyOverrides)
 	if !dPresent.Allow {
 		t.Error("present-empty attribute must still match an empty literal")
 	}
@@ -140,7 +140,7 @@ func TestAbsentOperatorAudit(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			rules := mustPolicy(t, `[{"name":"r","effect":"allow","when":`+tc.when+`}]`)
-			if got := evaluate(rules, q, denyOverrides).Allow; got != tc.wantAllow {
+			if got := evaluate(rules, q, DenyOverrides).Allow; got != tc.wantAllow {
 				t.Errorf("allow = %v, want %v — %s", got, tc.wantAllow, tc.note)
 			}
 		})
@@ -158,10 +158,10 @@ func TestNullAttributeHandlingIsPredictable(t *testing.T) {
 
 	// null literal -> parses as the empty string; behaves exactly like {"lit":""}.
 	rules := mustPolicy(t, `[{"name":"r","effect":"allow","when":{"eq":[{"attr":"scope"},{"lit":null}]}}]`)
-	if !evaluate(rules, Query{Grants: []Grant{{"tok", "", Allow}}, Need: "read", Scope: ""}, denyOverrides).Allow {
+	if !evaluate(rules, Query{Grants: []Grant{{"tok", "", Allow}}, Need: "read", Scope: ""}, DenyOverrides).Allow {
 		t.Error("a null literal should collapse to the empty string and match a present-empty scope")
 	}
-	if evaluate(rules, Query{Grants: []Grant{{"tok", "", Allow}}, Need: "read", Scope: "obj1"}, denyOverrides).Allow {
+	if evaluate(rules, Query{Grants: []Grant{{"tok", "", Allow}}, Need: "read", Scope: "obj1"}, DenyOverrides).Allow {
 		t.Error("null-literal-as-empty must not match a non-empty scope")
 	}
 }

@@ -1,4 +1,4 @@
-package main
+package rbac
 
 import "fmt"
 
@@ -11,7 +11,7 @@ func Example_absentVsEmpty() {
 	// "region" is not one of the five attributes the engine exposes -> ABSENT. Comparing an
 	// absent attribute even to "" does not match (three-valued logic: absent -> unknown).
 	absentPolicy := []byte(`[{"name":"r","effect":"allow","when":{"eq":[{"attr":"region"},{"lit":""}]}}]`)
-	aSnap, err := NewSnapshot("absent", absentPolicy, denyOverrides)
+	aSnap, err := NewSnapshot("absent", absentPolicy, DenyOverrides)
 	if err != nil {
 		panic(err)
 	}
@@ -20,7 +20,7 @@ func Example_absentVsEmpty() {
 	// "scope" IS exposed; here it is present and holds "" (a global check) -> PRESENT-EMPTY,
 	// which does match "".
 	emptyPolicy := []byte(`[{"name":"r","effect":"allow","when":{"eq":[{"attr":"scope"},{"lit":""}]}}]`)
-	eSnap, err := NewSnapshot("empty", emptyPolicy, denyOverrides)
+	eSnap, err := NewSnapshot("empty", emptyPolicy, DenyOverrides)
 	if err != nil {
 		panic(err)
 	}
@@ -43,12 +43,12 @@ func Example_failClosed() {
 	fmt.Println("no snapshot        -> allow:", empty.Decide(req).Allow)
 
 	// 2) A bad bundle is rejected; the last known-good snapshot stays installed.
-	good, err := NewSnapshot("good", []byte(fleetPolicy), denyOverrides)
+	good, err := NewSnapshot("good", []byte(fleetPolicy), DenyOverrides)
 	if err != nil {
 		panic(err)
 	}
 	h := NewHolder(good)
-	loadErr := h.Load("bad", []byte(`[{"name":"r","effect":"nope","when":{"lit":"x"}}]`), denyOverrides)
+	loadErr := h.Load("bad", []byte(`[{"name":"r","effect":"nope","when":{"lit":"x"}}]`), DenyOverrides)
 	fmt.Println("bad load rejected  ->", loadErr != nil)
 	fmt.Println("still serving good -> allow:", h.Decide(req).Allow)
 	// Output:
@@ -61,7 +61,7 @@ func Example_failClosed() {
 // are INDISTINGUISHABLE to the caller under Minimal (both "access denied"), while Full — for
 // your own logs — records how each was reached and so differs.
 func Example_disclosure() {
-	snap, err := NewSnapshot("fleet-v1", []byte(fleetPolicy), denyOverrides)
+	snap, err := NewSnapshot("fleet-v1", []byte(fleetPolicy), DenyOverrides)
 	if err != nil {
 		panic(err)
 	}

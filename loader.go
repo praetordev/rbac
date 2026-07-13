@@ -1,4 +1,4 @@
-package main
+package rbac
 
 import (
 	"context"
@@ -100,37 +100,4 @@ func (l *Loader) Version() string {
 		return s.ID()
 	}
 	return ""
-}
-
-func verdictWord(d Decision) string {
-	if d.Allow {
-		return "ALLOW"
-	}
-	return "DENY"
-}
-
-// demoLoader prints the loader serving a policy fetched from a Source, and failing closed
-// when the source is unreachable.
-func demoLoader() {
-	ctx := context.Background()
-	req := Query{Grants: []Grant{{"write", "obj1", Allow}}, Need: "write", Scope: "obj1"}
-
-	fmt.Println("\n════════ source-agnostic loader demo ════════")
-
-	l := NewLoader(NewMemorySource(policyV2JSON), denyOverrides)
-	_ = l.Refresh(ctx)
-	fmt.Printf("fetched + parsed version %s from a Source; write @ obj1 -> %s\n", l.Version(), verdictWord(l.Decide(req)))
-
-	bad := NewLoader(NewFileSource("/nonexistent/policy.json"), denyOverrides)
-	err := bad.Refresh(ctx)
-	fmt.Printf("\nunreachable source -> refresh error: %v\n", err)
-	fmt.Printf("  serving version %q; write @ obj1 -> %s (fail closed, last known-good)\n", bad.Version(), verdictWord(bad.Decide(req)))
-
-	// The integrity step is present and fails closed. Default is a no-op pass-through; a real
-	// check drops in via WithVerifier — here a stand-in that rejects everything.
-	reject := func([]byte) ([]byte, error) { return nil, fmt.Errorf("untrusted bundle (demo)") }
-	li := NewLoader(NewMemorySource(policyV2JSON), denyOverrides, WithVerifier(reject))
-	err = li.Refresh(ctx)
-	fmt.Printf("\nrejecting integrity check -> refresh error: %v\n", err)
-	fmt.Printf("  serving version %q; write @ obj1 -> %s (fail closed)\n", li.Version(), verdictWord(li.Decide(req)))
 }

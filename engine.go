@@ -3,13 +3,11 @@
 // node types (attr, literal, cmp, bool) instead of a hand-written Go predicate. A rule
 // matches when SOME grant the subject holds satisfies the tree, so the tree describes the
 // shape of a satisfying grant and the matcher supplies the existential over grants.
-package main
+package rbac
 
 import (
-	_ "embed"
 	"encoding/json"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 )
@@ -255,9 +253,6 @@ type RuleRef struct {
 func refOf(r Rule) RuleRef { return RuleRef{ID: r.ID, Name: r.Name, Effect: r.Effect} }
 
 // ---- Policy format + parser (JSON text -> rules -> condition trees) -------------
-
-//go:embed policy.json
-var policyJSON []byte
 
 // Parser bounds. A policy is untrusted input by contract (its integrity is a perimeter
 // concern, see TRUST-BOUNDARY.md), but a *technically valid* policy must still not be able
@@ -531,10 +526,10 @@ func evalVerdict(rules []Rule, q Query, combine Strategy) Decision {
 	return acc
 }
 
-// denyOverrides: any matching Deny is final and wins; a matching Allow sets the verdict
+// DenyOverrides: any matching Deny is final and wins; a matching Allow sets the verdict
 // but a later Deny can still override it. Absent any match, default-deny stands. The
 // deciding rule is recorded as the verdict is set; Reason is derived later, in one place.
-func denyOverrides(acc Decision, r Rule, matched bool) (Decision, RuleOutcome) {
+func DenyOverrides(acc Decision, r Rule, matched bool) (Decision, RuleOutcome) {
 	switch {
 	case acc.locked:
 		return acc, OutcomeSkipped
@@ -551,8 +546,8 @@ func denyOverrides(acc Decision, r Rule, matched bool) (Decision, RuleOutcome) {
 	}
 }
 
-// firstMatch: the first matching rule decides, full stop.
-func firstMatch(acc Decision, r Rule, matched bool) (Decision, RuleOutcome) {
+// FirstMatch: the first matching rule decides, full stop.
+func FirstMatch(acc Decision, r Rule, matched bool) (Decision, RuleOutcome) {
 	switch {
 	case acc.locked:
 		return acc, OutcomeSkipped
@@ -566,84 +561,5 @@ func firstMatch(acc Decision, r Rule, matched bool) (Decision, RuleOutcome) {
 			return acc, OutcomeDeny
 		}
 		return acc, OutcomeAllow
-	}
-}
-
-// ---- Driver --------------------------------------------------------------------
-
-func main() {
-	rules, err := parsePolicy(policyJSON)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "policy error:", err)
-		os.Exit(1)
-	}
-	fmt.Printf("loaded %d rules from policy.json\n\n", len(rules))
-
-	cases := []struct {
-		desc string
-		q    Query
-	}{
-		{
-			"global grant of the exact capability",
-			Query{Grants: []Grant{{"read", "", Allow}}, Need: "read", Scope: "obj1"},
-		},
-		{
-			"scoped grant, matching scope",
-			Query{Grants: []Grant{{"read", "obj1", Allow}}, Need: "read", Scope: "obj1"},
-		},
-		{
-			"scoped grant, DIFFERENT scope",
-			Query{Grants: []Grant{{"read", "obj1", Allow}}, Need: "read", Scope: "obj2"},
-		},
-		{
-			"global wildcard",
-			Query{Grants: []Grant{{"*", "", Allow}}, Need: "write", Scope: "obj5"},
-		},
-		{
-			"scoped wildcard on the scope",
-			Query{Grants: []Grant{{"*", "obj3", Allow}}, Need: "read", Scope: "obj3"},
-		},
-		{
-			"global wildcard + explicit scoped deny",
-			Query{Grants: []Grant{{"*", "", Allow}, {"write", "obj9", Deny}}, Need: "write", Scope: "obj9"},
-		},
-		{
-			"no grants",
-			Query{Grants: nil, Need: "read", Scope: "obj1"},
-		},
-	}
-
-	for _, tc := range cases {
-		fmt.Printf("● %s\n  %s\n", tc.desc, describe(tc.q))
-		printResult("deny-overrides", evaluate(rules, tc.q, denyOverrides))
-		printResult("first-match", evaluate(rules, tc.q, firstMatch))
-		fmt.Println()
-	}
-
-	demoSnapshots()
-	demoDisclosure()
-	demoLoader()
-}
-
-func describe(q Query) string {
-	held := make([]string, len(q.Grants))
-	for i, g := range q.Grants {
-		scope := g.Scope
-		if scope == "" {
-			scope = "*global*"
-		}
-		held[i] = g.Effect.token() + " " + g.Capability + "@" + scope
-	}
-	scope := q.Scope
-	if scope == "" {
-		scope = "*global*"
-	}
-	return fmt.Sprintf("holds {%s}; need %q @ %s", strings.Join(held, ", "), q.Need, scope)
-}
-
-func printResult(strategy string, d Decision) {
-	fmt.Printf("  [%s]\n", strategy)
-	for _, line := range strings.Split(d.Explain(), "\n") {
-		fmt.Printf("    %s\n", line)
 	}
 }

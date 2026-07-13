@@ -1,4 +1,4 @@
-package main
+package rbac
 
 import (
 	"encoding/json"
@@ -42,7 +42,7 @@ func TestByDesign_PermitAlwaysPolicyEvaluatedFaithfully(t *testing.T) {
 
 	for _, need := range []string{"read", "write", "delete", "anything-at-all"} {
 		q := Query{Grants: []Grant{{"some-token", "", Allow}}, Need: need, Scope: "any-scope"}
-		d := evaluate(rules, q, denyOverrides)
+		d := evaluate(rules, q, DenyOverrides)
 		if !d.Allow {
 			t.Errorf("over-broad policy must faithfully permit %q, got deny", need)
 		}
@@ -69,10 +69,10 @@ func TestByDesign_ForgedGrantIndistinguishableFromReal(t *testing.T) {
 	// sees an ordinary grant and honors it.
 	forged := Query{Grants: []Grant{{"delete", "obj1", Allow}}, Need: "delete", Scope: "obj1"}
 
-	if !evaluate(rules, legit, denyOverrides).Allow {
+	if !evaluate(rules, legit, DenyOverrides).Allow {
 		t.Fatal("legit grant should be permitted (sanity)")
 	}
-	if !evaluate(rules, forged, denyOverrides).Allow {
+	if !evaluate(rules, forged, DenyOverrides).Allow {
 		t.Error("engine permits the fabricated grant — this is faithful evaluation by design; " +
 			"provenance is the perimeter's job, not the engine's")
 	}
@@ -97,7 +97,7 @@ func TestByDesign_InjectionShapedValuesAreOpaque(t *testing.T) {
 
 	for _, p := range payloads {
 		q := Query{Grants: []Grant{{"tok", "", Allow}}, Need: p, Scope: ""}
-		if evaluate(guard, q, denyOverrides).Allow {
+		if evaluate(guard, q, DenyOverrides).Allow {
 			t.Errorf("payload %q was NOT treated as opaque — it matched a rule it should not", p)
 		}
 
@@ -109,7 +109,7 @@ func TestByDesign_InjectionShapedValuesAreOpaque(t *testing.T) {
 			t.Fatalf("marshal payload: %v", err)
 		}
 		selfMatch := mustPolicy(t, `[{"name":"exact-self","effect":"allow","when":{"eq":[{"attr":"need"},{"lit":`+string(litJSON)+`}]}}]`)
-		if !evaluate(selfMatch, q, denyOverrides).Allow {
+		if !evaluate(selfMatch, q, DenyOverrides).Allow {
 			t.Errorf("payload %q should match a literal equal to itself (opaque equality)", p)
 		}
 	}

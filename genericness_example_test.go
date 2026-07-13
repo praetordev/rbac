@@ -1,4 +1,4 @@
-package main
+package rbac
 
 import "fmt"
 
@@ -15,7 +15,7 @@ func Example_genericnessBoundary() {
 			{"eq":[{"attr":"grant.scope"},{"attr":"scope"}]}
 		]}}
 	]`)
-	snap, err := NewSnapshot("exact-v1", exact, denyOverrides)
+	snap, err := NewSnapshot("exact-v1", exact, DenyOverrides)
 	if err != nil {
 		panic(err)
 	}

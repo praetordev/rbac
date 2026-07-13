@@ -1,4 +1,4 @@
-package main
+package rbac
 
 import (
 	"bytes"
@@ -56,12 +56,12 @@ func writeReqAt(scope string) Query {
 // A properly signed bundle installs and takes effect.
 func TestVerifiedBundleInstalls(t *testing.T) {
 	verify := hmacVerifier(integritySecret)
-	h := NewHolder(mustSnap(t, "v1", policyV1JSON, denyOverrides)) // v1 denies write
+	h := NewHolder(mustSnap(t, "v1", policyV1JSON, DenyOverrides)) // v1 denies write
 
 	if h.Decide(writeReqAt("obj1")).Allow {
 		t.Fatal("v1 should DENY write (setup)")
 	}
-	if err := h.LoadBundle("v2", signBundle(integritySecret, policyV2JSON), verify, denyOverrides); err != nil {
+	if err := h.LoadBundle("v2", signBundle(integritySecret, policyV2JSON), verify, DenyOverrides); err != nil {
 		t.Fatalf("verified bundle must install: %v", err)
 	}
 	if got := h.Decide(writeReqAt("obj1")); !got.Allow || got.Snapshot != "v2" {
@@ -74,13 +74,13 @@ func TestVerifiedBundleInstalls(t *testing.T) {
 func TestTamperedBundleRejectedKeepsLastKnownGood(t *testing.T) {
 	verify := hmacVerifier(integritySecret)
 	readReq := Query{Grants: []Grant{{"read", "obj1", Allow}}, Need: "read", Scope: "obj1"}
-	h := NewHolder(mustSnap(t, "v1", policyV1JSON, denyOverrides))
+	h := NewHolder(mustSnap(t, "v1", policyV1JSON, DenyOverrides))
 
 	good := signBundle(integritySecret, policyV2JSON)
 	tampered := append([]byte(nil), good...)
 	tampered[0] ^= 0xff // flip a payload byte -> HMAC no longer matches
 
-	if err := h.LoadBundle("v2", tampered, verify, denyOverrides); err == nil {
+	if err := h.LoadBundle("v2", tampered, verify, DenyOverrides); err == nil {
 		t.Fatal("tampered bundle must be rejected")
 	}
 	if h.Current().ID() != "v1" {
@@ -97,10 +97,10 @@ func TestTamperedBundleRejectedKeepsLastKnownGood(t *testing.T) {
 // A bundle signed by an untrusted key (wrong secret) is rejected.
 func TestUntrustedBundleRejected(t *testing.T) {
 	verify := hmacVerifier(integritySecret)
-	h := NewHolder(mustSnap(t, "v1", policyV1JSON, denyOverrides))
+	h := NewHolder(mustSnap(t, "v1", policyV1JSON, DenyOverrides))
 
 	forged := signBundle([]byte("attacker-key"), policyV2JSON)
-	if err := h.LoadBundle("v2", forged, verify, denyOverrides); err == nil {
+	if err := h.LoadBundle("v2", forged, verify, DenyOverrides); err == nil {
 		t.Fatal("bundle signed with an untrusted key must be rejected")
 	}
 	if h.Current().ID() != "v1" || h.Decide(writeReqAt("obj1")).Allow {
@@ -110,8 +110,8 @@ func TestUntrustedBundleRejected(t *testing.T) {
 
 // Loading without a verifier is refused outright (fail closed) — no bypass by omission.
 func TestNilVerifierRefused(t *testing.T) {
-	h := NewHolder(mustSnap(t, "v1", policyV1JSON, denyOverrides))
-	if err := h.LoadBundle("v2", policyV2JSON, nil, denyOverrides); err == nil {
+	h := NewHolder(mustSnap(t, "v1", policyV1JSON, DenyOverrides))
+	if err := h.LoadBundle("v2", policyV2JSON, nil, DenyOverrides); err == nil {
 		t.Fatal("loading a bundle with no verifier must be refused")
 	}
 	if h.Current().ID() != "v1" {
@@ -123,11 +123,11 @@ func TestNilVerifierRefused(t *testing.T) {
 // after verification) and falls back to last known-good.
 func TestVerifiedButMalformedRejected(t *testing.T) {
 	verify := hmacVerifier(integritySecret)
-	h := NewHolder(mustSnap(t, "v1", policyV1JSON, denyOverrides))
+	h := NewHolder(mustSnap(t, "v1", policyV1JSON, DenyOverrides))
 
 	// Authentically signed, but the payload is a depth-bomb the parser rejects.
 	bundle := signBundle(integritySecret, nestedAllPolicy(2000))
-	if err := h.LoadBundle("bad", bundle, verify, denyOverrides); err == nil {
+	if err := h.LoadBundle("bad", bundle, verify, DenyOverrides); err == nil {
 		t.Fatal("a verified-but-malformed bundle must still be rejected at parse")
 	}
 	if h.Current().ID() != "v1" {
@@ -143,7 +143,7 @@ func TestConcurrentLoadBundleAtomicity(t *testing.T) {
 	tampered := append([]byte(nil), good...)
 	tampered[0] ^= 0xff
 
-	h := NewHolder(mustSnap(t, "v1", policyV1JSON, denyOverrides))
+	h := NewHolder(mustSnap(t, "v1", policyV1JSON, DenyOverrides))
 	req := writeReqAt("obj1")
 
 	var wg sync.WaitGroup
@@ -173,8 +173,8 @@ func TestConcurrentLoadBundleAtomicity(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 500; j++ {
-				h.LoadBundle("v2", good, verify, denyOverrides)     // may install v2
-				h.LoadBundle("v2", tampered, verify, denyOverrides) // must be rejected, no swap
+				h.LoadBundle("v2", good, verify, DenyOverrides)     // may install v2
+				h.LoadBundle("v2", tampered, verify, DenyOverrides) // must be rejected, no swap
 			}
 		}()
 	}

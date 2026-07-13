@@ -1,4 +1,4 @@
-package main
+package rbac
 
 import (
 	"strings"
@@ -148,10 +148,10 @@ func TestParserClearErrorsForMalformed(t *testing.T) {
 func TestBadLoadFailsClosedToLastKnownGood(t *testing.T) {
 	readReq := Query{Grants: []Grant{{"read", "obj1", Allow}}, Need: "read", Scope: "obj1"}
 
-	v1 := mustSnap(t, "v1", policyV1JSON, denyOverrides)
+	v1 := mustSnap(t, "v1", policyV1JSON, DenyOverrides)
 	h := NewHolder(v1)
 
-	if err := h.Load("v-bad", nestedAllPolicy(2000), denyOverrides); err == nil {
+	if err := h.Load("v-bad", nestedAllPolicy(2000), DenyOverrides); err == nil {
 		t.Fatal("a pathological bundle must be rejected by Load")
 	}
 	if cur := h.Current(); cur == nil || cur.ID() != "v1" {
@@ -165,7 +165,7 @@ func TestBadLoadFailsClosedToLastKnownGood(t *testing.T) {
 	}
 
 	// A good load through the same path installs normally.
-	if err := h.Load("v2", policyV2JSON, denyOverrides); err != nil {
+	if err := h.Load("v2", policyV2JSON, DenyOverrides); err != nil {
 		t.Fatalf("valid bundle should load: %v", err)
 	}
 	if !h.Decide(writeReq()).Allow || h.Decide(writeReq()).Snapshot != "v2" {
@@ -177,7 +177,7 @@ func TestBadLoadFailsClosedToLastKnownGood(t *testing.T) {
 // fails closed to deny — never opens, never panics.
 func TestBadLoadWithNoKnownGoodStaysClosed(t *testing.T) {
 	var empty Holder
-	if err := empty.Load("bad", nestedAllPolicy(2000), denyOverrides); err == nil {
+	if err := empty.Load("bad", nestedAllPolicy(2000), DenyOverrides); err == nil {
 		t.Fatal("bad load should error")
 	}
 	if empty.Current() != nil {

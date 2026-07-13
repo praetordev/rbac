@@ -1,14 +1,14 @@
-// Command policyeval is a generic capability-grant authorization engine: a pure Policy
-// Decision Point that answers "may this request proceed?" by evaluating opaque capability
-// and scope strings against an ordered list of rules.
+// Package rbac is a generic capability-grant authorization engine: a pure Policy Decision
+// Point that answers "may this request proceed?" by evaluating opaque capability and scope
+// strings against an ordered list of rules.
 //
 // It is deliberately GENERIC. It knows nothing about organizations, ownership, tenants, or
 // any named role. The only concepts are opaque capability tokens and opaque scope ids — the
 // engine treats them as strings and never interprets them. The consuming app's vocabulary
 // lives entirely in the data, not here.
 //
-// The binary is runnable (go run ./cmd/policyeval) and prints a demonstration; the types
-// documented below are the surface an integrator programs against.
+// The types documented below are the surface an integrator programs against; the runnable
+// examples show them end to end.
 //
 // # The decision surface
 //
@@ -39,8 +39,8 @@
 //
 // A decision is reached by EXISTENTIAL match: a rule matches when SOME [Grant] in
 // Query.Grants satisfies its condition, and a combining strategy folds the matching rules
-// into the final verdict. Two strategies ship: denyOverrides (any matching Deny wins) and
-// firstMatch (the first matching rule decides).
+// into the final verdict. Two strategies ship: DenyOverrides (any matching Deny wins) and
+// FirstMatch (the first matching rule decides).
 //
 // # Reading a decision
 //
@@ -180,10 +180,10 @@
 // The combining strategy, chosen at [NewSnapshot] time, folds the rules into one verdict and
 // determines how much rule ORDER matters:
 //
-//	denyOverrides — a matching Deny is a veto: it wins wherever it sits, overriding a
+//	DenyOverrides — a matching Deny is a veto: it wins wherever it sits, overriding a
 //	                matching Allow. Order barely matters; author broad allows with denies as
 //	                carve-outs. Default-deny if nothing matches.
-//	firstMatch    — the first matching rule decides, full stop. Here ORDER IS THE POLICY:
+//	FirstMatch    — the first matching rule decides, full stop. Here ORDER IS THE POLICY:
 //	                put specific exceptions first, general rules last.
 //
 // See the runnable [Example_authoring].
@@ -301,4 +301,4 @@
 //   - [Example_failClosed] — no snapshot and a bad load both deny; last known-good is kept.
 //   - [Example_disclosure] — Minimal hides structure from the caller; Full is for your logs.
 //   - [Example_flattening] — a hierarchy flattened into namespaced scopes; no prefix logic.
-package main
+package rbac

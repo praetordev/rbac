@@ -1,19 +1,9 @@
-package main
+package rbac
 
 import (
-	_ "embed"
 	"fmt"
 	"sync/atomic"
 )
-
-// Two policies parsed ONCE, up front, into immutable snapshots. v1 permits only read;
-// v2 adds a rule permitting write. Same request -> different decision.
-//
-//go:embed policy-v1.json
-var policyV1JSON []byte
-
-//go:embed policy-v2.json
-var policyV2JSON []byte
 
 // Snapshot is the frozen, already-parsed output of the parser: an id, the parsed rules
 // (condition trees) and the combining strategy. It is IMMUTABLE — "updating" a policy
@@ -98,36 +88,4 @@ func Decide(snap *Snapshot, q Query) Decision {
 	d := evaluate(snap.rules, q, snap.combine)
 	d.Snapshot = snap.id
 	return d
-}
-
-// demoSnapshots prints the loader/snapshot/versioning behaviour so `go run` shows it:
-// same request, decided under v1, then under v2 after an atomic swap, then fail-closed.
-func demoSnapshots() {
-	v1 := mustSnapshot(NewSnapshot("v1", policyV1JSON, denyOverrides))
-	v2 := mustSnapshot(NewSnapshot("v2", policyV2JSON, denyOverrides))
-	h := NewHolder(v1)
-	req := Query{Grants: []Grant{{"write", "obj1", Allow}}, Need: "write", Scope: "obj1"}
-
-	fmt.Println("════════ snapshot / versioning demo ════════")
-	fmt.Printf("request: %s\n\n", describe(req))
-
-	fmt.Println("holder currently serves v1 (read-only):")
-	printResult("v1", h.Decide(req))
-
-	fmt.Print("\n── update: atomic swap v1 → v2 (adds allow-write) ──\n\n")
-	h.Set(v2)
-
-	fmt.Println("holder now serves v2 — same request:")
-	printResult("v2", h.Decide(req))
-
-	fmt.Println("\nfail-closed — no snapshot installed:")
-	var empty Holder
-	printResult("none", empty.Decide(req))
-}
-
-func mustSnapshot(s *Snapshot, err error) *Snapshot {
-	if err != nil {
-		panic(err)
-	}
-	return s
 }

@@ -1,4 +1,4 @@
-package main
+package rbac
 
 import (
 	"bytes"
@@ -35,7 +35,7 @@ func TestLoaderParseOncePerVersion(t *testing.T) {
 	if err := os.WriteFile(path, policyV1JSON, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	l := NewLoader(NewFileSource(path), denyOverrides)
+	l := NewLoader(NewFileSource(path), DenyOverrides)
 	ctx := context.Background()
 
 	if err := l.Refresh(ctx); err != nil {
@@ -63,7 +63,7 @@ func TestLoaderParseOncePerVersion(t *testing.T) {
 
 // Decisions never re-parse or swap: the snapshot pointer is stable across many Decides.
 func TestLoaderDecideNeverReparses(t *testing.T) {
-	l := NewLoader(NewMemorySource(policyV2JSON), denyOverrides)
+	l := NewLoader(NewMemorySource(policyV2JSON), DenyOverrides)
 	if err := l.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestLoaderFetchFailureKeepsLastKnownGood(t *testing.T) {
 	if err := os.WriteFile(path, policyV2JSON, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	l := NewLoader(NewFileSource(path), denyOverrides)
+	l := NewLoader(NewFileSource(path), DenyOverrides)
 	ctx := context.Background()
 	if err := l.Refresh(ctx); err != nil {
 		t.Fatal(err)
@@ -111,7 +111,7 @@ func TestLoaderParseFailureKeepsLastKnownGood(t *testing.T) {
 	if err := os.WriteFile(path, policyV2JSON, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	l := NewLoader(NewFileSource(path), denyOverrides)
+	l := NewLoader(NewFileSource(path), DenyOverrides)
 	ctx := context.Background()
 	if err := l.Refresh(ctx); err != nil {
 		t.Fatal(err)
@@ -135,7 +135,7 @@ func TestLoaderParseFailureKeepsLastKnownGood(t *testing.T) {
 
 // With no known-good yet, a first-refresh failure fails closed to deny.
 func TestLoaderFirstRefreshFailureFailsClosed(t *testing.T) {
-	l := NewLoader(NewFileSource(filepath.Join(t.TempDir(), "missing.json")), denyOverrides)
+	l := NewLoader(NewFileSource(filepath.Join(t.TempDir(), "missing.json")), DenyOverrides)
 	if err := l.Refresh(context.Background()); err == nil {
 		t.Fatal("missing source must error")
 	}
@@ -152,7 +152,7 @@ func TestLoaderFirstRefreshFailureFailsClosed(t *testing.T) {
 // snapshot.
 func TestLoaderRawSizeGateRejectsOversized(t *testing.T) {
 	big := bytes.Repeat([]byte("x"), maxBundleBytes+1)
-	l := NewLoader(NewMemorySource(big), denyOverrides)
+	l := NewLoader(NewMemorySource(big), DenyOverrides)
 	if err := l.Refresh(context.Background()); err == nil {
 		t.Fatal("the loader size-gate must reject an oversized bundle")
 	}
@@ -164,7 +164,7 @@ func TestLoaderRawSizeGateRejectsOversized(t *testing.T) {
 // Atomic swap under -race: every decision reflects a whole snapshot (v1 denies write, v2
 // allows it), never a partial/mixed one, while refreshes swap continuously.
 func TestLoaderAtomicSwapUnderRace(t *testing.T) {
-	l := NewLoader(&alternatingSource{a: policyV1JSON, b: policyV2JSON}, denyOverrides)
+	l := NewLoader(&alternatingSource{a: policyV1JSON, b: policyV2JSON}, DenyOverrides)
 	if err := l.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}

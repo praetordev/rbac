@@ -1,4 +1,4 @@
-package main
+package rbac
 
 import (
 	"bytes"
@@ -20,7 +20,7 @@ func TestLoaderDefaultIntegrityIsPassthrough(t *testing.T) {
 		t.Fatalf("PassthroughVerifier must return the bundle unchanged, got %q err=%v", got, err)
 	}
 
-	l := NewLoader(NewMemorySource(policyV2JSON), denyOverrides) // default = pass-through
+	l := NewLoader(NewMemorySource(policyV2JSON), DenyOverrides) // default = pass-through
 	if err := l.Refresh(context.Background()); err != nil {
 		t.Fatalf("default pass-through must accept and load: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestLoaderRejectedBundleKeepsLastKnownGood(t *testing.T) {
 	if err := os.WriteFile(path, policyV1JSON, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	l := NewLoader(NewFileSource(path), denyOverrides, WithVerifier(verify))
+	l := NewLoader(NewFileSource(path), DenyOverrides, WithVerifier(verify))
 	ctx := context.Background()
 
 	if err := l.Refresh(ctx); err != nil {
@@ -71,7 +71,7 @@ func TestLoaderRejectedBundleKeepsLastKnownGood(t *testing.T) {
 // With no known-good yet, a rejected first refresh fails closed to deny.
 func TestLoaderRejectedFirstRefreshFailsClosed(t *testing.T) {
 	rejectAll := func([]byte) ([]byte, error) { return nil, errors.New("untrusted") }
-	l := NewLoader(NewMemorySource(policyV2JSON), denyOverrides, WithVerifier(rejectAll))
+	l := NewLoader(NewMemorySource(policyV2JSON), DenyOverrides, WithVerifier(rejectAll))
 
 	if err := l.Refresh(context.Background()); err == nil {
 		t.Fatal("a rejected first refresh must error")
@@ -106,7 +106,7 @@ func TestLoaderVerifyBeforeParse(t *testing.T) {
 		return bytes.TrimPrefix(raw, prefix), nil // consume Raw -> produce policy bytes
 	}
 
-	l := NewLoader(NewMemorySource(envelope), denyOverrides, WithVerifier(unwrap))
+	l := NewLoader(NewMemorySource(envelope), DenyOverrides, WithVerifier(unwrap))
 	if err := l.Refresh(context.Background()); err != nil {
 		t.Fatalf("verify-before-parse must yield a parseable policy: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestLoaderIntegrityRunsPerNewVersion(t *testing.T) {
 	if err := os.WriteFile(path, policyV1JSON, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	l := NewLoader(NewFileSource(path), denyOverrides, WithVerifier(verify))
+	l := NewLoader(NewFileSource(path), DenyOverrides, WithVerifier(verify))
 	ctx := context.Background()
 
 	if err := l.Refresh(ctx); err != nil { // new version -> verify
