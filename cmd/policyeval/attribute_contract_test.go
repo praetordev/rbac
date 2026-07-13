@@ -69,21 +69,26 @@ func TestAttributeEmptyIsPresentDistinctFromAbsent(t *testing.T) {
 	}
 }
 
-// The subtlety the trust contract exists to guard: in the DECISION path an absent attribute
-// compares equal to the empty literal (the engine reads absent as ""), exactly like a present
-// empty one — yet the TRACE keeps them distinct. Two attributes that decide identically but
-// trace differently is precisely why absence must be controlled by SOURCING attributes from
-// trusted origins, not left to chance.
-func TestAttributeAbsentEqualsEmptyLiteralInDecisionButTraceDistinct(t *testing.T) {
+// KNOWN DEVIATION from the epic invariant "absent -> comparison false".
+//
+// The engine currently reads an absent attribute as "" in the decision path, so
+// `attr == lit("")` returns TRUE — an absent attribute is indistinguishable from a present
+// empty one in the VERDICT (only the trace separates them). A rule meant to match "present
+// but empty" therefore silently also matches every subject that lacks the attribute, and the
+// verdict looks identical to the intended case.
+//
+// This test PINS that wrong behaviour as-is, so the fix can be proven to flip exactly this
+// and nothing else. It is expected to be updated once absent is corrected to a non-match.
+func TestKnownDeviation_AbsentCollapsesToEmpty(t *testing.T) {
 	rules := mustPolicy(t, `[{"name":"r","effect":"allow","when":{"eq":[{"attr":"subject.dept"},{"lit":""}]}}]`)
 	q := Query{Grants: []Grant{{"tok", "", Allow}}, Need: "read", Scope: "obj1"}
 
 	d := evaluate(rules, q, denyOverrides)
 	if !d.Allow {
-		t.Error("current behaviour: an absent attribute equals the empty literal in the decision (read as \"\")")
+		t.Error("KNOWN DEVIATION: absent attribute is read as \"\" and so equals the empty literal (currently ALLOW)")
 	}
 	if cmp := condOf(t, d); !cmp.Left.Absent() {
-		t.Error("the trace must still mark the attribute absent, distinguishing it from a present empty")
+		t.Error("the trace still marks the attribute absent, distinguishing it from a present empty")
 	}
 }
 
